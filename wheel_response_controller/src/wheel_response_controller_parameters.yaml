@@ -1,0 +1,49 @@
+wheel_response_controller:
+  command_joint_name:
+    type: string
+    default_value: ""
+    description: "Name of the commanded joint."
+    read_only: true
+    validation:
+      not_empty<>: null
+
+  state_joint_name:
+    type: string
+    default_value: ""
+    description: "Name of the state joint."
+    read_only: true
+    validation:
+      not_empty<>: null
+
+  interface_name:
+    type: string
+    default_value: ""
+    description: "Name of the interface to command"
+    validation:
+      not_empty<>: null
+
+  # FIXME(SuperJappie08): Descriptions are copied from control_toolbox::Sinusoid docs
+  sinusoid:
+    offset:
+      type: double
+      default_value: 0.0
+      description: "A DC offset to be added to the sine wave"
+
+    amplitude:
+      type: double
+      default_value: 1.0
+      description: "Amplitude of the sine wave"
+      validation:
+        gt<>: 0.0
+
+    frequency: # FIXME(SuperJappie08): Make this range with steps
+      type: double
+      default_value: 1.0
+      description: "Frequency of the sine wave"
+      validation:
+        gt<>: 0.0
+
+    phase:
+      type: double
+      default_value: 0.0
+      description: "Phase (in radians) of the sine wave at t=0"

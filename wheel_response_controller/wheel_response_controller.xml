@@ -1,0 +1,6 @@
+<library path="wheel_response_controller">
+  <class name="wheel_response_controller/WheelResponseController" type="wheel_response_controller::WheelResponseController"
+    base_class_type="controller_interface::ControllerInterface">
+    <description>A controller to measure the frequency response of a Wheel (or any other single state element)</description>
+  </class>
+</library>
