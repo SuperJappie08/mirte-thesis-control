@@ -24,7 +24,6 @@
 // ROS2 Control
 #include <control_toolbox/sinusoid.hpp>
 #include <controller_interface/controller_interface.hpp>
-// #include <controller_interface/controller_interface_base.hpp>
 
 // Package local includes
 #include <wheel_response_controller/visibility_control.hpp>
@@ -47,12 +46,12 @@ public:
   WHEEL_RESPONSE_CONTROLLER_PUBLIC
   controller_interface::CallbackReturn on_init() override;
 
-  // WHEEL_RESPONSE_CONTROLLER_PUBLIC
-  // controller_interface::CallbackReturn on_configure(
-  //   const rclcpp_lifecycle::State & previous_state) override;
-
   WHEEL_RESPONSE_CONTROLLER_PUBLIC
   controller_interface::CallbackReturn on_activate(
+    const rclcpp_lifecycle::State & previous_state) override;
+
+  WHEEL_RESPONSE_CONTROLLER_PUBLIC
+  controller_interface::CallbackReturn on_deactivate(
     const rclcpp_lifecycle::State & previous_state) override;
 
   WHEEL_RESPONSE_CONTROLLER_PUBLIC
@@ -65,5 +64,6 @@ protected:
 
 private:
   control_toolbox::Sinusoid sinusoid_;
+  rclcpp::Time start_time_;
 };
 }  // namespace wheel_response_controller

@@ -11,7 +11,7 @@ ament_auto_find_build_dependencies()
 
 generate_parameter_library(wheel_response_controller_parameters
   src/wheel_response_controller_parameters.yaml
-)
+  include/wheel_response_controller/validators.hpp)
 list(APPEND ${PROJECT_NAME}_LIBRARIES "wheel_response_controller_parameters")
 
 ament_auto_add_library(${PROJECT_NAME} SHARED

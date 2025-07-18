@@ -12,12 +12,22 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cmath>
+#include <vector>
+
+// Package includes
+#include <wheel_response_controller/wheel_response_controller.hpp>
+
+// ROS2 Control
 #include <control_toolbox/sinusoid.hpp>
 #include <controller_interface/controller_interface.hpp>
-#include <controller_interface/controller_interface_base.hpp>
 #include <controller_interface/helpers.hpp>
+
+// General ROS includes
+#include <rclcpp/duration.hpp>
+#include <rclcpp/logging.hpp>
+#include <rclcpp/time.hpp>
 #include <rclcpp_lifecycle/state.hpp>
-#include <wheel_response_controller/wheel_response_controller.hpp>
 
 namespace wheel_response_controller
 {
@@ -31,17 +41,23 @@ WheelResponseController::WheelResponseController()
 controller_interface::InterfaceConfiguration
 WheelResponseController::command_interface_configuration() const
 {
-  return {
-    controller_interface::interface_configuration_type::INDIVIDUAL,
-    {params_.command_joint_name + "/" + params_.interface_name}};
+  std::vector<std::string> command_interfaces;
+  for (const auto & command_joint_name : params_.command_joint_names) {
+    command_interfaces.push_back(command_joint_name + "/" + params_.interface_name);
+  }
+
+  return {controller_interface::interface_configuration_type::INDIVIDUAL, command_interfaces};
 }
 
 controller_interface::InterfaceConfiguration
 WheelResponseController::state_interface_configuration() const
 {
-  return {
-    controller_interface::interface_configuration_type::INDIVIDUAL,
-    {params_.state_joint_name + "/" + params_.interface_name}};
+  std::vector<std::string> state_interfaces;
+  for (const auto & state_joint_name : params_.state_joint_names) {
+    state_interfaces.push_back(state_joint_name + "/" + params_.interface_name);
+  }
+
+  return {controller_interface::interface_configuration_type::INDIVIDUAL, state_interfaces};
 }
 
 controller_interface::CallbackReturn WheelResponseController::on_init()
@@ -63,32 +79,59 @@ controller_interface::CallbackReturn WheelResponseController::on_init()
 controller_interface::CallbackReturn WheelResponseController::on_activate(
   const rclcpp_lifecycle::State & /*previous_state*/)
 {
-  params_ = param_listener_->get_params();
+  param_listener_->try_get_params(params_);
 
-  // TODO(SuperJappie08): Temporary initialization of sinusiod_
   sinusoid_ = control_toolbox::Sinusoid(
     params_.sinusoid.offset, params_.sinusoid.amplitude, params_.sinusoid.frequency,
     params_.sinusoid.phase);
 
+  start_time_ = get_node()->now();
+
   return controller_interface::CallbackReturn::SUCCESS;
 }
 
-// FIXME(SuperJappie08): Check if hw interface is smart enough, or add stopping behavior
+controller_interface::CallbackReturn WheelResponseController::on_deactivate(
+  const rclcpp_lifecycle::State & /*previous_state*/)
+{
+  auto logger = get_node()->get_logger();
+  param_listener_->try_get_params(params_);
+
+  RCLCPP_INFO(logger, "Deactivating '%s'", get_name().c_str());
+
+  // NOTE(SuperJappie08): Set the control input back to zero to prevent
+  //                      leaving it at a continuous speed
+  auto reset_value = params_.reset_command_on_deactivate;
+  if (!std::isnan(reset_value)) {
+    RCLCPP_INFO(logger, "Resetting the command interface(s) to %lf", reset_value);
+
+    bool set_command_result = true;
+    for (auto & command_interface : command_interfaces_) {
+      set_command_result &= command_interface.set_value(reset_value);
+    }
+
+    RCLCPP_WARN_EXPRESSION(
+      logger, !set_command_result, "Some reset commands were unable to be reset!");
+  }
+
+  return controller_interface::CallbackReturn::SUCCESS;
+}
 
 controller_interface::return_type WheelResponseController::update(
-  const rclcpp::Time & time, const rclcpp::Duration & period)
+  const rclcpp::Time & time, const rclcpp::Duration & /*period*/)
 {
-  // NOTE(SuperJappie08): Could use something like this to update frequency.
-  // param_listener_->try_get_params(params_);
+  auto logger = get_node()->get_logger();
 
-  // FIXME(SuperJappie08): Implement
-  (void)period;
+  auto sinusoid_time = time - start_time_;
 
   double q, qd, qdd;
-  q = sinusoid_.update(time.seconds(), qd, qdd);
+  q = sinusoid_.update(sinusoid_time.seconds(), qd, qdd);
 
-  (void)command_interfaces_[0].set_value(q);
-  // controller_interface:
+  bool set_command_result = true;
+  for (auto & command_interface : command_interfaces_) {
+    set_command_result &= command_interface.set_value(q);
+  }
+
+  RCLCPP_WARN_EXPRESSION(logger, !set_command_result, "Some commands were unable to be set!");
 
   return controller_interface::return_type::OK;
 }

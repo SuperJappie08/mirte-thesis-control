@@ -1,18 +1,21 @@
 wheel_response_controller:
-  command_joint_name:
-    type: string
-    default_value: ""
-    description: "Name of the commanded joint."
+  command_joint_names:
+    type: string_array
+    default_value: []
+    description: "Names of the joints to be commanded."
     read_only: true
     validation:
+      unique<>: null
       not_empty<>: null
 
-  state_joint_name:
-    type: string
-    default_value: ""
-    description: "Name of the state joint."
+  # FIXME(SuperJappie08) Currently unused, maybe remove
+  state_joint_names:
+    type: string_array
+    default_value: []
+    description: "Names of the joints to measure state from."
     read_only: true
     validation:
+      unique<>: null
       not_empty<>: null
 
   interface_name:
@@ -22,12 +25,19 @@ wheel_response_controller:
     validation:
       not_empty<>: null
 
-  # FIXME(SuperJappie08): Descriptions are copied from control_toolbox::Sinusoid docs
+  reset_command_on_deactivate:
+    type: double
+    default_value: .NAN
+    description: "Reset the command interface to the specified value. (.NAN == No Reset)"
+
+  # NOTE(SuperJappie08): Descriptions are copied from control_toolbox::Sinusoid docs
   sinusoid:
     offset:
       type: double
       default_value: 0.0
       description: "A DC offset to be added to the sine wave"
+      validation:
+        wheel_response_controller::is_real: null
 
     amplitude:
       type: double
@@ -35,15 +45,19 @@ wheel_response_controller:
       description: "Amplitude of the sine wave"
       validation:
         gt<>: 0.0
+        wheel_response_controller::is_real: null
 
-    frequency: # FIXME(SuperJappie08): Make this range with steps
+    frequency:
       type: double
       default_value: 1.0
       description: "Frequency of the sine wave"
       validation:
         gt<>: 0.0
+        wheel_response_controller::is_real: null
 
     phase:
       type: double
       default_value: 0.0
       description: "Phase (in radians) of the sine wave at t=0"
+      validation:
+        wheel_response_controller::is_real: null
