@@ -1,0 +1,77 @@
+response_director:
+  controller_name:
+    type: string
+    default_value: ""
+    description: "The name of the controller to measure"
+    read_only: true
+    validation:
+      not_empty<>: null
+
+  measurement_duration:
+    type: double
+    default_value: 5.0
+    description: "Howlong to measure at each configuration point in seconds"
+    read_only: true
+    validation:
+      gt<>: 0.0
+
+  progressbar:
+    type: bool
+    default_value: False
+    description: "Enable a progressbar"
+    read_only: true
+
+  arguments:
+    type: string_array
+    default_value: ["offset", "amplitude", "frequency", "phase"]
+    description: "The available sinusoid parameters"
+    read_only: true
+    validation:
+      unique<>: null
+      fixed_size<>: 4
+  sinusoid:
+    __map_arguments:
+      kind:
+        type: string
+        read_only: true
+        validation:
+          not_empty<>: null
+          one_of<>: [["fixed", "linear", "log"]]
+      value:
+        type: double
+        default_value: .NAN
+        description: "The fixed value when the amplitude kind is 'fixed'"
+        read_only: true
+        # validation:
+        #   "custom_validators::gt_or_nan": 0.0
+      start:
+        type: double
+        default_value: .NAN
+        description: "The start value when the kind is 'linear' or 'log'. (When 'log' this is an exponent of 'base')"
+        read_only: true
+      stop:
+        type: double
+        default_value: .NAN
+        description: "The (inclusive) stop value when the kind is 'linear' or 'log'. (When 'log' this is an exponent of 'base')"
+        read_only: true
+      num_steps:
+        type: int
+        default_value: 0
+        description: "The number of steps when the kind is 'linear' or 'log'"
+        read_only: true
+        validation:
+          gt_eq<>: 0
+      base:
+        type: double
+        default_value: 10.0
+        description: "The base of the exponent when kind is 'log'"
+        validation:
+          gt<>: 0.0
+
+  # amplitude:
+  #   kind:
+  #     type: string
+  #     read_only: true
+  #     validation:
+  #       not_empty<>: null
+  #       one_of<>: [["fixed",]]

@@ -1,0 +1,5 @@
+response_director:
+  ros__parameters:
+    sinusoid:
+      frequency:
+        kind: "fixed"
