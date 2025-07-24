@@ -18,7 +18,10 @@ import time
 import platform
 import itertools
 
+from datetime import datetime
 from typing import Optional
+from pathlib import Path
+from deprecated import deprecated
 from contextlib import AbstractContextManager
 
 from tqdm.contrib.itertools import product as tqdm_product
@@ -34,7 +37,7 @@ from rclpy.logging import RcutilsLogger as Logger
 
 import rosbag2_py
 from controller_manager.controller_manager_services import (
-    service_caller,
+    list_hardware_components,
     switch_controllers,
 )
 
@@ -64,6 +67,9 @@ def wait_for_node(
         )
 
 
+@deprecated(
+    reason="Probably better to use 'controller_manager.controller_services.service_caller'"
+)
 def retry_call(
     executor: rclpy.executors.Executor,
     logger: Logger,
@@ -103,66 +109,41 @@ class ControllerContext(AbstractContextManager):
         self,
         node: rclpy.node.Node,
         controller: str,
-        executor: rclpy.executors.Executor | None = None,
-        # logger: Logger,
-        # client: rclpy.client.Client,
+        controller_manager_name: str = "controller_manager",
     ):
         self._node = node
-        self._controller_manager_name = "controller_manager"
-        self.executor = executor or node.executor
-        self.logger = node.get_logger().get_child("controller_switcher")
-        self.client = node.create_client(
-            SwitchController, "controller_manager/switch_controller"
-        )
-        self.controller_name = controller
+        self._controller_manager_name = controller_manager_name
+        self._logger = node.get_logger().get_child("controller_switcher")
+        self._controller_name = controller
         self._lock = threading.Lock()
 
     def __enter__(self):
         assert self._lock.acquire()
-        self.logger.info(f"Activating controller '{self.controller_name}'")
+        self._logger.info(f"Activating controller '{self._controller_name}'")
         result: SwitchController.Response = switch_controllers(
             node=self._node,
             controller_manager_name=self._controller_manager_name,
-            activate_controllers=[self.controller_name],
+            activate_controllers=[self._controller_name],
             deactivate_controllers=[],
             strictness=SwitchController.Request.FORCE_AUTO,
             activate_asap=True,
-            timeout=0
+            timeout=0,
         )
-        # retry_call(
-        #     self.executor,
-        #     self.logger,
-        #     self.client,
-        #     SwitchController.Request(
-        #         activate_controllers=[self.controller_name],
-        #         strictness=SwitchController.Request.FORCE_AUTO,
-        #         activate_asap=True,
-        #     ),
-        # )
 
         assert result.ok
         return super().__enter__()
 
     def __exit__(self, exc_type, exc_value, traceback):
-        self.logger.info(f"Deactivating controller '{self.controller_name}'")
+        self._logger.info(f"Deactivating controller '{self._controller_name}'")
         result: SwitchController.Response = switch_controllers(
             node=self._node,
             controller_manager_name=self._controller_manager_name,
             activate_controllers=[],
-            deactivate_controllers=[self.controller_name],
+            deactivate_controllers=[self._controller_name],
             strictness=SwitchController.Request.FORCE_AUTO,
             activate_asap=True,
             timeout=0,
         )
-        # retry_call(
-        #     self.executor,
-        #     self.logger,
-        #     self.client,
-        #     SwitchController.Request(
-        #         deactivate_controllers=[self.controller_name],
-        #         strictness=SwitchController.Request.FORCE_AUTO,
-        #     ),
-        # )
 
         self._lock.release()
         assert result.ok
@@ -173,6 +154,8 @@ def main(args=None):
     rclpy.init(args=args, signal_handler_options=rclpy.SignalHandlerOptions.NO)
     # rclpy.executors.MultiThreadedExecutor()
     with rclpy.get_global_executor() as exc:
+        recorder = None
+        record_thread = None
         try:
             node = rclpy.create_node("response_director")
             logger: Logger = node.get_logger()
@@ -181,9 +164,11 @@ def main(args=None):
             param_listener = response_director_parameters.ParamListener(node)
             params = param_listener.get_params()
 
+            controller_manager_name = "controller_manager"
+
             # wait_for_node(node, logger, "io/telemetrix", timeout=params.node_timeout)
-            # wait_for_node(node, logger, "controller_manager", timeout=params.node_timeout)
-            # wait_for_node(node, logger, params.controller_name, timeout=params.node_timeout)
+            wait_for_node(node, logger, controller_manager_name, timeout=params.node_timeout)
+            wait_for_node(node, logger, params.controller_name, timeout=params.node_timeout)
 
             product = tqdm_product if params.progressbar else itertools.product
 
@@ -192,21 +177,29 @@ def main(args=None):
             frequency = ParameterIterator("frequency", params.sinusoid)
             phase = ParameterIterator("phase", params.sinusoid)
 
-            # set_controller_state_client = node.create_client(
-            #     SwitchController, "controller_manager/switch_controller"
-            # )
-            controller_context_manager = ControllerContext(node, params.controller_name)
-
-            # FIXME: LOCATION
-            storage_options = rosbag2_py.StorageOptions(uri="/tmp/recordings")
-            storage_options.custom_data["host"] = platform.node()
-
-            hw_client = node.create_client(
-                ListHardwareComponents, "controller_manager/list_hardware_components"
+            controller_context_manager = ControllerContext(
+                node,
+                params.controller_name,
+                controller_manager_name=controller_manager_name,
             )
 
-            hw_components: ListHardwareComponents.Response = retry_call(
-                exc, logger, hw_client, ListHardwareComponents.Request()
+            storage_location = Path(params.storage_location).expanduser().absolute()
+
+            if storage_location.exists() and not storage_location.is_dir():
+                logger.fatal(f"The storage path '{storage_location}' exists, but is not a folder!")
+                raise FileExistsError(f"The storage path '{storage_location}' exists, but is not a folder!")
+
+            if not storage_location.exists():
+                logger.info(f"Creating folder {storage_location}")
+                storage_location.mkdir(parents=True, exist_ok=True)
+
+            storage_options = rosbag2_py.StorageOptions(
+                uri=f"{storage_location}", storage_id="mcap"
+            )
+            storage_options.custom_data["host"] = platform.node()
+
+            hw_components: ListHardwareComponents.Response = list_hardware_components(
+                node, controller_manager_name
             )
             storage_options.custom_data["hw_interfaces"] = str(hw_components.component)
 
@@ -215,10 +208,10 @@ def main(args=None):
                 set(
                     [
                         f"{params.controller_name}/transition_event",
-                        "controller_manager/activity",
-                        "controller_manager/introspection_data/full",
-                        "controller_manager/introspection_data/names",
-                        "controller_manager/introspection_data/values",
+                        f"{controller_manager_name}/activity",
+                        f"{controller_manager_name}/introspection_data/full",
+                        f"{controller_manager_name}/introspection_data/names",
+                        f"{controller_manager_name}/introspection_data/values",
                         "/diagnostics",
                         "/rosout",
                     ]
@@ -237,6 +230,8 @@ def main(args=None):
             logger.info(f"Waiting for {params.controller_name}'s parameter services")
             param_client.wait_for_services()
 
+            recorder = rosbag2_py.Recorder()
+            record_thread = None
             for new_params in product(offset, amplitude, frequency, phase):
                 param_future = param_client.set_parameters(
                     [
@@ -253,20 +248,65 @@ def main(args=None):
 
                 # TODO: START RECORDING
 
+                date = None
+                if len(storage_location.parts[-1]) > 15:
+                    maybe_date = storage_location.parts[-1][-15:]
+                    try:
+                        datetime.fromisoformat(maybe_date[:10])
+                        date = maybe_date
+                    except ValueError:
+                        pass
+
+                prefix = None
+                if date is None:
+                    prefix = storage_location.parts[-1]
+                else:
+                    prefix = storage_location.parts[-1][:-16]
+
+
+                # FIXME
+                filename = f"{prefix}-sinusoid"
+
+                for (name, value) in new_params:
+                    filename += f"-{name}-{value:03.02E}".replace(".", "_")
+
+                if date is not None:
+                    filename = f"{filename}-{date}"
+
+                storage_options.uri = str(storage_location / filename)
+
                 for name, value in new_params:
                     storage_options.custom_data[name] = str(value)
 
-                # recorder = rosbag2_py.Recorder(storage_options, recorder_options)
-                # exc.add_node(recorder)
+                # recorder_task = exc.create_task(recorder.record, storage_options, recorder_options)
 
+                record_thread = threading.Thread(
+                    target=recorder.record,
+                    args=(storage_options, recorder_options,),
+                    daemon=True)
+                record_thread.start()
                 with controller_context_manager as controller_ctx:
                     task = exc.create_task(time.sleep, params.measurement_duration)
+                    # storage_options.end_time_ns = int((time.time() + params.measurement_duration )*1e9)
+                    # recorder.record(storage_options, recorder_options)
+                    # recorder_task = exc.create_task(recorder.record, storage_options, recorder_options)
                     print("Start recording")
                     exc.spin_until_future_complete(task)
+                    # exc.spin_until_future_complete(recorder_task)
                     assert task.done()
+                    # assert recorder_task.done()
 
+                recorder.cancel()
+                record_thread.join()
+
+                # exc.spin_until_future_complete(recorder_task)
                 # print(o, a, f, p)
         finally:
+            if recorder is not None:
+                recorder.cancel()
+            if record_thread is not None:
+                if record_thread.is_alive():
+                    record_thread.join()
             node.destroy_node()
 
     rclpy.try_shutdown()

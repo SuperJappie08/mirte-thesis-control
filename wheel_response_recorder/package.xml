@@ -9,11 +9,12 @@
 
   <depend>rclpy</depend>
   <depend>rosbag2_py</depend>
+  <depend>controller_manager</depend>
   <depend>controller_manager_msgs</depend>
-  <depend>generate_parameter_library</depend>
   <depend>generate_parameter_library_py</depend>
   <depend>python3-numpy</depend>
   <depend>python3-tqdm</depend>
+  <depend>python3-deprecated</depend>
 
   <exec_depend>wheel_response_controller</exec_depend>
 

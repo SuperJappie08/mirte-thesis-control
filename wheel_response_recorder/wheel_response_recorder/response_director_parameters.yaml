@@ -7,6 +7,13 @@ response_director:
     validation:
       not_empty<>: null
 
+  storage_location:
+    type: string
+    description: "Save location for the measurements folder"
+    read_only: true
+    validation:
+      not_empty<>: null
+
   measurement_duration:
     type: double
     default_value: 5.0
