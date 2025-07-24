@@ -15,12 +15,34 @@ response_director:
     validation:
       gt<>: 0.0
 
+  node_timeout:
+    type: double
+    default_value: .INF
+    description: "Howlong to wait for nodes to be available (.INF is infinite)"
+    read_only: true
+
   progressbar:
     type: bool
     default_value: False
     description: "Enable a progressbar"
     read_only: true
 
+  recorded_services:
+    type: string_array
+    default_value: []
+    description: "Services to record"
+    read_only: true
+    validation:
+      unique<>: null
+
+  recorded_topics:
+    type: string_array
+    default_value: []
+    description: "Extra topics to record"
+    read_only: true
+    validation:
+      unique<>: null
+      
   arguments:
     type: string_array
     default_value: ["offset", "amplitude", "frequency", "phase"]
