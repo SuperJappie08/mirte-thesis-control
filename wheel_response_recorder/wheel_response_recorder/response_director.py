@@ -166,9 +166,11 @@ def main(args=None):
 
             controller_manager_name = "controller_manager"
 
-            # wait_for_node(node, logger, "io/telemetrix", timeout=params.node_timeout)
-            wait_for_node(node, logger, controller_manager_name, timeout=params.node_timeout)
-            wait_for_node(node, logger, params.controller_name, timeout=params.node_timeout)
+            node_timeout = params.node_timeout
+
+            wait_for_node(node, logger, "io/telemetrix", timeout=node_timeout)
+            wait_for_node(node, logger, controller_manager_name, timeout=node_timeout)
+            wait_for_node(node, logger, params.controller_name, timeout=node_timeout)
 
             product = tqdm_product if params.progressbar else itertools.product
 
@@ -186,8 +188,12 @@ def main(args=None):
             storage_location = Path(params.storage_location).expanduser().absolute()
 
             if storage_location.exists() and not storage_location.is_dir():
-                logger.fatal(f"The storage path '{storage_location}' exists, but is not a folder!")
-                raise FileExistsError(f"The storage path '{storage_location}' exists, but is not a folder!")
+                logger.fatal(
+                    f"The storage path '{storage_location}' exists, but is not a folder!"
+                )
+                raise FileExistsError(
+                    f"The storage path '{storage_location}' exists, but is not a folder!"
+                )
 
             if not storage_location.exists():
                 logger.info(f"Creating folder {storage_location}")
@@ -196,12 +202,14 @@ def main(args=None):
             storage_options = rosbag2_py.StorageOptions(
                 uri=f"{storage_location}", storage_id="mcap"
             )
-            storage_options.custom_data["host"] = platform.node()
+            custom_data = {"host": platform.node()}
+            for key, value in platform.uname()._asdict():
+                custom_data[f"uname.{key}"] = str(value)
 
             hw_components: ListHardwareComponents.Response = list_hardware_components(
                 node, controller_manager_name
             )
-            storage_options.custom_data["hw_interfaces"] = str(hw_components.component)
+            custom_data["hw_interfaces"] = str(hw_components.component)
 
             recorder_options = rosbag2_py.RecordOptions()
             recorder_options.topics = list(
@@ -246,7 +254,7 @@ def main(args=None):
                     if not result.successful:
                         raise RuntimeError(f"Unable to set parameters: {result.reason}")
 
-                # TODO: START RECORDING
+                # NOTE: START RECORDING
 
                 date = None
                 if len(storage_location.parts[-1]) > 15:
@@ -263,44 +271,57 @@ def main(args=None):
                 else:
                     prefix = storage_location.parts[-1][:-16]
 
+                if date is not None:
+                    prefix = f"{date[:10].replace('-', '')}-{prefix}"
 
                 # FIXME
-                filename = f"{prefix}-sinusoid"
+                filename = f"{datetime.now().time().isoformat(timespec='seconds').replace(':', '')}-{prefix}-sinusoid"
 
-                for (name, value) in new_params:
+                for name, value in new_params:
                     filename += f"-{name}-{value:03.02E}".replace(".", "_")
-
-                if date is not None:
-                    filename = f"{filename}-{date}"
 
                 storage_options.uri = str(storage_location / filename)
 
                 for name, value in new_params:
-                    storage_options.custom_data[name] = str(value)
+                    custom_data[f"sinusoid.{name}"] = str(value)
 
-                # recorder_task = exc.create_task(recorder.record, storage_options, recorder_options)
+                custom_data["recording_date"] = datetime.now().isoformat(
+                    timespec="seconds"
+                )
+
+                recording_duration = max(
+                    params.measurement_duration, 2 / dict(*new_params)["frequency"]
+                )
+                custom_data["recording_duration"] = recording_duration
+
+                storage_options.custom_data = custom_data.copy()
 
                 record_thread = threading.Thread(
                     target=recorder.record,
-                    args=(storage_options, recorder_options,),
-                    daemon=True)
+                    args=(
+                        storage_options,
+                        recorder_options,
+                    ),
+                    daemon=True,
+                )
                 record_thread.start()
+
+                if recording_duration > params.measurement_duration:
+                    logger.warning(
+                        "Extended the measurement time to record atleast 2 cycles! (Consider increasing the measurement time)"
+                    )
+
                 with controller_context_manager as controller_ctx:
-                    task = exc.create_task(time.sleep, params.measurement_duration)
-                    # storage_options.end_time_ns = int((time.time() + params.measurement_duration )*1e9)
-                    # recorder.record(storage_options, recorder_options)
-                    # recorder_task = exc.create_task(recorder.record, storage_options, recorder_options)
-                    print("Start recording")
+                    task = exc.create_task(time.sleep, recording_duration)
+                    logger.info(
+                        f"Started recording with {' '.join(sorted(f'{k} = {v}' for k, v in dict(*new_params)))}"
+                    )
+
                     exc.spin_until_future_complete(task)
-                    # exc.spin_until_future_complete(recorder_task)
                     assert task.done()
-                    # assert recorder_task.done()
 
                 recorder.cancel()
                 record_thread.join()
-
-                # exc.spin_until_future_complete(recorder_task)
-                # print(o, a, f, p)
         finally:
             if recorder is not None:
                 recorder.cancel()

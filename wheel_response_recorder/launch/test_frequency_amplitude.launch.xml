@@ -1,0 +1,59 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<launch>
+  <arg name="audit-progress" default="False" />
+
+  <arg name="controller_name" />
+
+  <arg name="measurement_type" default="test-measurement" />
+  <arg name="measurement_name"
+    default="$(var measurement_type)-$(eval 'datetime.datetime.now().isoformat(timespec=\'minutes\').replace(\':\', \'\')' datetime)" />
+  <log message="Starting measurement '$(var measurement_name)'" />
+
+  <arg name="measurements_folder" default="~/thesis/measurements" />
+  <let name="storage_location"
+    value="$(eval '\'$(var measurements_folder)\'.rstrip(\'/\')')/$(var measurement_name)" />
+  <log message="Saving the measurements to $(var storage_location)" />
+
+
+  <group>
+    <let name="launch-prefix" value="xterm -geometry 160x2 -e" if="$(var audit-progress)" />
+
+    <node pkg="wheel_response_recorder" exec="response_director" on_exit="shutdown" output="screen"
+      emulate_tty="true">
+      <param name="progressbar" value="$(var audit-progress)" />
+      <param name="storage_location" value="$(var storage_location)" />
+
+      <param name="controller_name" value="$(var controller_name)" />
+
+      <param name="sinusoid">
+        <param name="amplitude">
+          <param name="kind" value="linear" />
+          <param name="start" value="2.0" />
+          <!-- TODO: Verify end-->
+          <param name="stop" value="10.0" />
+          <param name="num_steps" value="5" />
+        </param>
+
+        <param name="frequency">
+          <param name="kind" value="log" />
+          <param name="start" value="-2.0" />
+          <!-- TODO: MAKE CONFIGURABLE OR SOMETHING, BUT CURRENTLY LOW BECAUSE OF CONTROLLER MANAGER
+        LIMIT -->
+          <param name="stop" value="1.0" />
+          <param name="num_steps" value="40" />
+        </param>
+
+        <param name="phase">
+          <param name="kind" value="fixed" />
+          <param name="value" value="0.0" />
+        </param>
+
+        <param name="offset">
+          <param name="kind" value="fixed" />
+          <!-- TODO: EXPOSE and posibly iter -->
+          <param name="value" value="0.0" />
+        </param>
+      </param>
+    </node>
+  </group>
+</launch>

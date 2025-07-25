@@ -2,9 +2,9 @@
 <launch>
   <arg name="audit-progress" default="False" />
 
-  <arg name="controller_name" default="kaas" />
+  <arg name="controller_name" />
 
-  <arg name="measurement_type" default="test-measurement" />
+  <arg name="measurement_type" default="freq-prelim" />
   <arg name="measurement_name"
     default="$(var measurement_type)-$(eval 'datetime.datetime.now().isoformat(timespec=\'minutes\').replace(\':\', \'\')' datetime)" />
   <log message="Starting measurement '$(var measurement_name)'" />
@@ -14,6 +14,7 @@
     value="$(eval '\'$(var measurements_folder)\'.rstrip(\'/\')')/$(var measurement_name)" />
   <log message="Saving the measurements to $(var storage_location)" />
 
+  <arg name="measurement_duration" default="5.0" />
 
   <group>
     <let name="launch-prefix" value="xterm -geometry 160x2 -e" if="$(var audit-progress)" />
@@ -27,11 +28,8 @@
 
       <param name="sinusoid">
         <param name="amplitude">
-          <param name="kind" value="linear" />
-          <param name="start" value="2.0" />
-          <!-- TODO: Verify end-->
-          <param name="stop" value="10.0" />
-          <param name="num_steps" value="5" />
+          <param name="kind" value="fixed" />
+          <param name="value" value="2.5" />
         </param>
 
         <param name="frequency">
@@ -49,9 +47,11 @@
         </param>
 
         <param name="offset">
-          <param name="kind" value="fixed" />
+          <param name="kind" value="linear" />
           <!-- TODO: EXPOSE and posibly iter -->
-          <param name="value" value="0.0" />
+          <param name="start" value="0.0" />
+          <param name="stop" value="3.0" />
+          <param name="num_steps" value="2" />
         </param>
       </param>
     </node>

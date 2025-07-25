@@ -42,7 +42,6 @@ setup(
     entry_points={
         "console_scripts": [
             "response_director = wheel_response_recorder.response_director:main",
-            # "response_director_old = wheel_response_recorder.response_director_node:main",
         ],
     },
 )
