@@ -19,7 +19,6 @@ import platform
 import itertools
 
 from datetime import datetime
-from typing import Optional
 from pathlib import Path
 from deprecated import deprecated
 from contextlib import AbstractContextManager
@@ -199,11 +198,8 @@ def main(args=None):
                 logger.info(f"Creating folder {storage_location}")
                 storage_location.mkdir(parents=True, exist_ok=True)
 
-            storage_options = rosbag2_py.StorageOptions(
-                uri=f"{storage_location}", storage_id="mcap"
-            )
             custom_data = {"host": platform.node()}
-            for key, value in platform.uname()._asdict():
+            for key, value in platform.uname()._asdict().items():
                 custom_data[f"uname.{key}"] = str(value)
 
             hw_components: ListHardwareComponents.Response = list_hardware_components(
@@ -280,8 +276,6 @@ def main(args=None):
                 for name, value in new_params:
                     filename += f"-{name}-{value:03.02E}".replace(".", "_")
 
-                storage_options.uri = str(storage_location / filename)
-
                 for name, value in new_params:
                     custom_data[f"sinusoid.{name}"] = str(value)
 
@@ -290,11 +284,16 @@ def main(args=None):
                 )
 
                 recording_duration = max(
-                    params.measurement_duration, 2 / dict(*new_params)["frequency"]
+                    params.measurement_duration, 2 / dict(new_params)["frequency"]
                 )
-                custom_data["recording_duration"] = recording_duration
+                custom_data["recording_duration"] = str(recording_duration)
 
-                storage_options.custom_data = custom_data.copy()
+                storage_options = rosbag2_py.StorageOptions(
+                    str(storage_location / filename),
+                    storage_id="mcap",
+                    storage_preset_profile="zstd_fast",
+                    custom_data=custom_data.copy(),
+                )
 
                 record_thread = threading.Thread(
                     target=recorder.record,
@@ -314,13 +313,14 @@ def main(args=None):
                 with controller_context_manager as controller_ctx:
                     task = exc.create_task(time.sleep, recording_duration)
                     logger.info(
-                        f"Started recording with {' '.join(sorted(f'{k} = {v}' for k, v in dict(*new_params)))}"
+                        f"Started recording with {' '.join(sorted(f'{k} = {v}' for k, v in new_params))}"
                     )
 
                     exc.spin_until_future_complete(task)
                     assert task.done()
 
                 recorder.cancel()
+                logger.info("Stopped Recording")
                 record_thread.join()
         finally:
             if recorder is not None:
