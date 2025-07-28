@@ -22,23 +22,11 @@
     <choice value="singlemotor_topic_based" />
   </arg>
 
+  <let name="hw_interface_specific_params_file"
+    value="$(find-pkg-share wheel_response_recorder)/config/$(var hw_interface).yaml" />
+
   <group>
     <let name="launch-prefix" value="xterm -geometry 160x2 -e" if="$(var audit-progress)" />
-
-    <let name="recorded_topics"
-      value="/io/encoder/front_left;/io/encoder/front_right;/io/encoder/rear_left;/io/encoder/rear_right" />
-
-    <let name="recorded_topics"
-      value="$(var recorded_topics);/io/motor/motorservocontroller/multi_speed"
-      if="$(equals '$(var hw_interface)' 'multimotor_topic_based')" />
-    <let name="recorded_topics"
-      value="$(var recorded_topics);/io/motor/front_left/speed;/io/motor/front_right/speed;/io/motor/rear_left/speed;/io/motor/rear_right/speed"
-      if="$(equals '$(var hw_interface)' 'singlemotor_topic_based')" />
-
-    <let name="recorded_services"
-      value="/io/motor/motorservocontroller/set_multiple_speeds"
-      if="$(equals '$(var hw_interface)' 'service_based')" />
-
 
     <node pkg="wheel_response_recorder" exec="response_director" on_exit="shutdown" output="screen"
       emulate_tty="true">
@@ -47,8 +35,7 @@
 
       <param name="controller_name" value="$(var controller_name)" />
 
-      <param name="recorded_services" value="$(var recorded_services)" value-sep=";" />
-      <param name="recorded_topics" value="$(var recorded_topics '')" value-sep=";" />
+      <param from="$(var hw_interface_specific_params_file)" />
 
       <param name="measurement_duration" value="$(var measurement_duration)" />
 

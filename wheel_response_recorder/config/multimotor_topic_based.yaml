@@ -1,0 +1,12 @@
+# Multi motor topic-based
+response_director:
+  ros__parameters:
+    recorded_topics:
+      # Encoders
+      - io/encoder/front_left
+      - io/encoder/front_right
+      - io/encoder/rear_left
+      - io/encoder/rear_right
+      # Motors
+      - io/motor/motorservocontroller/multi_speed
+    recorded_services: []

@@ -1,0 +1,7 @@
+<launch>
+  <executable cmd="ros2 control set_controller_state mirte_base_controller inactive" />
+  <executable cmd="ros2 control set_controller_state pid_wheels_controller inactive" />
+
+  <node pkg="controller_manager" exec="spawner"
+    args="multi_wheel_response_controller --inactive -p $(find-pkg-share wheel_response_recorder)/config/multi_wheel_response_controller.yaml" />
+</launch>

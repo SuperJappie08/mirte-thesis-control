@@ -32,6 +32,7 @@ import rclpy.executors
 import rclpy.node
 import rclpy.parameter_client
 
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType
 from rclpy.logging import RcutilsLogger as Logger
 
 import rosbag2_py
@@ -159,6 +160,26 @@ def main(args=None):
             node = rclpy.create_node("response_director")
             logger: Logger = node.get_logger()
             exc.add_node(node)
+
+            node.declare_parameter(
+                name="recorded_services",
+                value=rclpy.Parameter.Type.STRING_ARRAY,
+                descriptor=ParameterDescriptor(
+                    description="Services to record",
+                    read_only=True,
+                    type=ParameterType.PARAMETER_STRING_ARRAY,
+                ),
+            )
+
+            node.declare_parameter(
+                name="recorded_topics",
+                value=rclpy.Parameter.Type.STRING_ARRAY,
+                descriptor=ParameterDescriptor(
+                    description="Extra topics to record",
+                    read_only=True,
+                    type=ParameterType.PARAMETER_STRING_ARRAY,
+                ),
+            )
 
             param_listener = response_director_parameters.ParamListener(node)
             params = param_listener.get_params()

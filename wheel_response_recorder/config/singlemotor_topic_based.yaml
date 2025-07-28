@@ -1,0 +1,15 @@
+# Single motor topic-based
+response_director:
+  ros__parameters:
+    recorded_topics:
+      # Encoders
+      - io/encoder/front_left
+      - io/encoder/front_right
+      - io/encoder/rear_left
+      - io/encoder/rear_right
+      # Motors
+      - io/motor/front_left/speed
+      - io/motor/front_right/speed
+      - io/motor/rear_left/speed
+      - io/motor/rear_right/speed
+    recorded_services: []

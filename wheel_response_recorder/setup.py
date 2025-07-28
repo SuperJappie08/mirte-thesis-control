@@ -1,6 +1,7 @@
 import sys
 
 from glob import glob
+from pathlib import Path
 from setuptools import find_packages, setup
 
 package_name = "wheel_response_recorder"
@@ -20,7 +21,9 @@ if len(sys.argv) >= 2 and sys.argv[1] != "clean":
 config_files = [
     (f"share/{package_name}/{folder}", glob(folder + "/*"))
     for folder in glob("config/*")
-]
+    if Path(folder).is_dir()
+] + [(f"share/{package_name}/config", glob("config/*.*"))]
+
 
 setup(
     name=package_name,
