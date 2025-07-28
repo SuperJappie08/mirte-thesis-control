@@ -1,6 +1,19 @@
 <launch>
+  <arg name="robot_version" default="mirte_master">
+    <!-- The original MIRTE Master -->
+    <choice value="mirte_master" />
+  </arg>
+  <arg name="control_setup">
+    <!-- The original MIRTE control method -->
+    <choice value="service_based" />
+  </arg>
+
   <executable cmd="ros2 control set_controller_state mirte_base_controller inactive" />
   <executable cmd="ros2 control set_controller_state pid_wheels_controller inactive" />
+
+  <executable
+    cmd="ros2 param set io/telemetrix modules.motorservocontroller.service_introspection true"
+    if="$(and $(equals $(var control_setup) 'service_based') $(equals $(var robot_version) 'mirte_master'))" />
 
   <node pkg="controller_manager" exec="spawner"
     args="multi_wheel_response_controller --inactive -p $(find-pkg-share wheel_response_recorder)/config/multi_wheel_response_controller.yaml" />
