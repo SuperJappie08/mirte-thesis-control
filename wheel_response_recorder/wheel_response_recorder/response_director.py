@@ -150,6 +150,9 @@ class ControllerContext(AbstractContextManager):
         return super().__exit__(exc_type, exc_value, traceback)
 
 
+SRV_POSTFIX: str = "/_service_event"
+
+
 def main(args=None):
     rclpy.init(args=args, signal_handler_options=rclpy.SignalHandlerOptions.NO)
     # rclpy.executors.MultiThreadedExecutor()
@@ -228,6 +231,8 @@ def main(args=None):
             )
             custom_data["hw_interfaces"] = str(hw_components.component)
 
+            custom_data["extra_notes"] = params.extra_notes
+
             recorder_options = rosbag2_py.RecordOptions()
             recorder_options.topics = list(
                 set(
@@ -243,7 +248,10 @@ def main(args=None):
                     + params.recorded_topics
                 )
             )
-            recorder_options.services = params.recorded_services
+            recorder_options.services = list(
+                (service if service.endswith(SRV_POSTFIX) else service + SRV_POSTFIX)
+                for service in params.recorded_services
+            )
             recorder_options.disable_keyboard_controls = True
 
             param_callback_group = (

@@ -1,0 +1,18 @@
+response_director:
+  ros__parameters:
+    sinusoid:
+      amplitude:
+        kind: fixed
+        value: 2.5
+      frequency:
+        kind: log
+        start: -2.0
+        # The maximum is this low as a result of the controller frequency
+        stop: 1.0
+        num_steps: 40
+      phase:
+        kind: fixed
+        value: 0.0
+      offset:
+        kind: fixed
+        value: 4.5

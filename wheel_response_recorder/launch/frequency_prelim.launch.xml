@@ -4,10 +4,18 @@
 
   <arg name="controller_name" />
 
-  <arg name="measurement_type" default="freq-prelim" />
+  <arg name="measurement_type" default="prelim-freq" />
   <arg name="measurement_name"
     default="$(var measurement_type)-$(eval 'datetime.datetime.now().isoformat(timespec=\'minutes\').replace(\':\', \'\')' datetime)" />
   <log message="Starting measurement '$(var measurement_name)'" />
+
+  <arg name="sinusoid_param_file" default="prelim_frequency_offset.yaml"
+    description="The sinusoid iteration configuration file (located in config/measurement)" />
+  <arg name="sinusoid_param_fullpath"
+    default="$(find-pkg-share wheel_response_recorder)/config/measurement/$(var sinusoid_param_file)"
+    description="The sinusoid iteration configuration file (full path)" />
+
+  <log message="Using parameters '$(var sinusoid_param_fullpath)'" />
 
   <arg name="measurements_folder" default="~/thesis/measurements" />
   <let name="storage_location"
@@ -21,6 +29,8 @@
     <choice value="multimotor_topic_based" />
     <choice value="singlemotor_topic_based" />
   </arg>
+
+  <arg name="extra_notes" default="" description="Extra notes to store with the measurements" />
 
   <let name="hw_interface_specific_params_file"
     value="$(find-pkg-share wheel_response_recorder)/config/$(var hw_interface).yaml" />
@@ -39,34 +49,9 @@
 
       <param name="measurement_duration" value="$(var measurement_duration)" />
 
-      <param name="sinusoid">
-        <param name="amplitude">
-          <param name="kind" value="fixed" />
-          <param name="value" value="2.5" />
-        </param>
+      <param name="extra_notes" value="$(var extra_notes)" />
 
-        <param name="frequency">
-          <param name="kind" value="log" />
-          <param name="start" value="-2.0" />
-          <!-- TODO: MAKE CONFIGURABLE OR SOMETHING, BUT CURRENTLY LOW BECAUSE OF CONTROLLER MANAGER
-        LIMIT -->
-          <param name="stop" value="1.0" />
-          <param name="num_steps" value="40" />
-        </param>
-
-        <param name="phase">
-          <param name="kind" value="fixed" />
-          <param name="value" value="0.0" />
-        </param>
-
-        <param name="offset">
-          <param name="kind" value="linear" />
-          <!-- TODO: EXPOSE and posibly iter -->
-          <param name="start" value="0.0" />
-          <param name="stop" value="3.0" />
-          <param name="num_steps" value="2" />
-        </param>
-      </param>
+      <param from="$(var sinusoid_param_fullpath)" />
     </node>
   </group>
 </launch>
