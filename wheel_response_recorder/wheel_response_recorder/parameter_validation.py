@@ -15,7 +15,12 @@
 
 import math
 
+
 def gt_or_nan(param, value):
     if math.isnan(param.value) or param.value > value:
-        return ""
-    return f"Parameter '{param.name}' with the value {param.value} must be NAN or greater than {value}"
+        return ''
+    return "Parameter '%s' with the value %s must be NAN or greater than %s" % (
+        param.name,
+        param.value,
+        value,
+    )
