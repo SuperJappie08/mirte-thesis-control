@@ -27,6 +27,7 @@ if TYPE_CHECKING:
 
 try:
     import colorlog
+
     logging = colorlog
 except ImportError:
     import logging
@@ -205,7 +206,14 @@ class StatisticsCollector:
                 ),
             )
 
-            self.__data.loc[msg_time] = new_data
+            if new_data:
+                self.__data.loc[msg_time] = new_data
+            else:
+                logger.info(
+                    "Data for '%s' at %s was all ignored, skipping.",
+                    self.base_topic,
+                    msg_time,
+                )
             self.__processed_values_until += 1
 
         return True
