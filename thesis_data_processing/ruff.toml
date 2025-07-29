@@ -1,0 +1,50 @@
+target-version = "py310"
+line-length = 99
+
+[format]
+quote-style = "preserve"
+
+[lint]
+# Missing flake8-class-newline
+# Missing flake8-deprecated
+# Missing flake8-import-order, but using Isort instead
+
+extend-select = ["A", "BLE", "C4", "D", "I", "Q", "COM"]
+extend-ignore = [
+    "BLE001", # "B902",
+    # ??? flake8-commas # "C816",
+    "D100",
+    "D101",
+    "D102",
+    "D103",
+    "D104",
+    "D105",
+    "D106",
+    "D107",
+    "D203",
+    "D212",
+    "D404",
+    # "I202",
+]
+
+[lint.isort]
+force-single-line = true
+force-sort-within-sections = true
+single-line-exclusions = [
+    "collections.abc",
+    "six.moves",
+    "typing",
+    "typing_extensions",
+]
+order-by-type = false
+# google = {
+#     "lexicographical": True,
+#     "line_length": 1000,
+#     "group_by_package": True,
+#     }
+
+[lint.flake8-quotes]
+inline-quotes = "single"
+
+[lint.pydocstyle]
+convention = "pep257"
