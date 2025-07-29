@@ -1,0 +1,27 @@
+name: CI mirte-thesis-control
+
+on:
+  push:
+  pull_request:
+
+
+jobs:
+  build_and_test:
+    runs-on: $${ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-24.04, windows-10]
+        ros_distro: [jazzy]
+    steps:
+      - name: Setup ROS (${{ matrix.ros_distro }})
+        uses: ros-tooling/setup-ros@v0.7
+        with:
+          required-ros-distributions: ${{ matrix.ros_distro }}
+      - name: Build and run tests
+        uses: ros-tooling/action-ros-ci@v0.4
+        with:
+          package-name: |
+            wheel_response_controller
+            wheel_response_recorder
+            thesis_data_processing
+          target-ros2-distro: ${{ matrix.ros_distro }}
