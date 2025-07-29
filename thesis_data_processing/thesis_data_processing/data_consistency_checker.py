@@ -58,6 +58,10 @@ class DataConsistencyChecker(Container):
                     )
                     return False
             else:
-                logger.info("Inserting '%s' with value '%s' into the checker", key, str(value))
+                logger.info(
+                    "Inserting '%s' with value '%s' into the checker",
+                    key,
+                    str(value) if len(str(value)) <= 25 else '...',
+                )
                 self._data[key] = value
         return True

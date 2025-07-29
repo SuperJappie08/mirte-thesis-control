@@ -15,5 +15,6 @@
 from .data_consistency_checker import DataConsistencyChecker
 from .rosbag_reader_utils import open_rosbag
 from .rosbag_reader_utils import read_messages
+from .statistics_collector import StatisticsCollector
 
-__all__ = ['DataConsistencyChecker', 'open_rosbag', 'read_messages']
+__all__ = ['DataConsistencyChecker', 'open_rosbag', 'read_messages', 'StatisticsCollector']

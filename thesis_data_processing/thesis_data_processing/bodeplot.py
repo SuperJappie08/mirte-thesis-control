@@ -22,6 +22,7 @@ import numpy as np
 from rosbag2_py import StorageFilter
 from rosbag2_py import StorageOptions
 from scipy.optimize import curve_fit
+from tqdm.auto import tqdm
 
 if TYPE_CHECKING:
     from types import ModuleType
@@ -35,9 +36,10 @@ try:
 except ImportError:
     import logging
 
-from thesis_data_processing import DataConsistencyChecker
-from thesis_data_processing import open_rosbag
-from thesis_data_processing import read_messages
+from . import DataConsistencyChecker
+from . import open_rosbag
+from . import read_messages
+from . import StatisticsCollector
 
 logger = logging.getLogger(__name__)
 
@@ -88,18 +90,36 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             frequency = float(custom_metadata[FREQUENCY_KEY])
             offset = float(custom_metadata[OFFSET_KEY])
 
-            for topic, msg, recv_time in read_messages(reader, storage_filter):
-                print(topic, type(topic))
-                print(msg, type(msg))
-                print(recv_time, type(recv_time))
-                break
+            total_msg_count = sum(
+                topic_metadata.message_count
+                for topic_metadata in metadata.topics_with_message_count
+                if topic_metadata.topic_metadata.name in storage_filter.topics
+            )
+
+            statistics_collector = StatisticsCollector('/controller_manager/introspection_data')
+
+            for topic, msg, recv_time in tqdm(
+                read_messages(reader, storage_filter),
+                total=total_msg_count,
+            ):
+                # print(topic, type(topic))
+                # print(msg, type(msg))
+                # print(recv_time, type(recv_time))
+
+                statistics_collector.process_msg(topic, msg, try_process=True)
+
+            print(statistics_collector.data)
             break
 
             xdata = 0
             ydata = 0
 
             angular_frequency = 2.0 * np.pi * frequency
-            f = lambda x, gain, phase: gain * np.sin(angular_frequency * x + phase) + offset
-            curve_fit(f, xdata, ydata, np.zeros(2))
+            curve_fit(
+                lambda x, gain, phase: gain * np.sin(angular_frequency * x + phase) + offset,
+                xdata,
+                ydata,
+                np.zeros(2),
+            )
 
     raise NotImplementedError()
