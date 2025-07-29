@@ -32,7 +32,8 @@ if TYPE_CHECKING:
     logging: ModuleType
 
 try:
-    import colorlog as logging
+    import colorlog
+    logging = colorlog
 except ImportError:
     import logging
 
