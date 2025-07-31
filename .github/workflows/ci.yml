@@ -6,7 +6,7 @@ jobs:
   ament_lint:
     runs-on: ubuntu-latest
     container:
-      image: rostooling/setup-ros-docker:ubuntu-noble-ros-${{ matrix.ros_distro }}-ros-base
+      image: ghcr.io/rostooling/setup-ros-docker:ubuntu-noble-ros-${{ matrix.ros_distro }}-ros-base
     strategy:
       fail-fast: false
       matrix:
