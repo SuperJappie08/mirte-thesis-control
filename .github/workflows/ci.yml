@@ -3,7 +3,7 @@ name: CI mirte-thesis-control
 on: [push, pull_request]
 
 jobs:
-  ament_lint:
+  lint:
     runs-on: ubuntu-latest
     container:
       image: rostooling/setup-ros-docker:ubuntu-${{ matrix.ubuntu }}-ros-${{ matrix.ros_distro }}-ros-base-latest
@@ -12,7 +12,7 @@ jobs:
       fail-fast: false
       matrix:
         package: [wheel_response_controller, wheel_response_recorder, thesis_data_processing]
-        linter: [xmllint, copyright, pep257, flake8]
+        linter: [xmllint, copyright, pep257, flake8, pycodestyle, cpplint]
         ros_distro: [jazzy]
         include:
           - ros_distro: jazzy
@@ -41,7 +41,7 @@ jobs:
     container:
       image: rostooling/setup-ros-docker:ubuntu-${{ matrix.ubuntu }}-ros-${{ matrix.ros_distro }}-ros-base-latest
 
-    needs: ament_lint
+    needs: lint
 
     strategy:
       matrix:
@@ -51,10 +51,6 @@ jobs:
             ubuntu: noble
 
     steps:
-      # - name: Setup ROS (${{ matrix.ros_distro }})
-      #   uses: ros-tooling/setup-ros@v0.7
-      #   with:
-      #     required-ros-distributions: ${{ matrix.ros_distro }}
       - name: Build and run tests
         uses: ros-tooling/action-ros-ci@v0.4
         with:
