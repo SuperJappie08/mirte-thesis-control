@@ -11,16 +11,13 @@ jobs:
       fail-fast: false
       matrix:
         package: [wheel_response_controller, wheel_response_recorder, thesis_data_processing]
-        linter: [xmllint, copyright]
+        linter: [xmllint, copyright, pep257, flake8]
         ros_distro: [jazzy]
         include:
           - ros_distro: jazzy
             ubuntu: noble
-          - package: wheel_response_recorder
-            linter: flake8
-          - package: wheel_response_recorder
-            linter: pep257
-          - package: wheel_response_recorder
+          - ros_distro: jazzy
+            package: wheel_response_recorder
             linter: mypy
             # linter: [ lint_cmake]
     steps:
