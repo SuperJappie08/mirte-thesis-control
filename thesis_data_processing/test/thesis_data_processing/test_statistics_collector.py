@@ -11,17 +11,52 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from pal_statistics_msgs.msg import StatisticsNames
+import pytest
 
 from thesis_data_processing import StatisticsCollector
 
+TEST_TOPIC = '/test/topic'
+INCLUDED = 'included'
+EXCLUDED = 'excluded'
 
-def test_filter_names():
-    sc = StatisticsCollector('/test/topic')
 
-    assert sc._include_name('yes')
-    assert sc._include_name('no')
+@pytest.fixture
+def stats_collector():
+    return StatisticsCollector(TEST_TOPIC)
 
-    sc = StatisticsCollector('/test/topic', only_names={'yes'})
 
-    assert sc._include_name('yes')
-    assert not sc._include_name('no')
+@pytest.fixture
+def filtered_stats_collector():
+    return StatisticsCollector(TEST_TOPIC, only_names={INCLUDED})
+
+
+def test_include_names_no_filter(stats_collector: StatisticsCollector):
+    assert stats_collector._include_name(INCLUDED)
+    assert stats_collector._include_name(EXCLUDED)
+
+
+def test_include_names_filter(filtered_stats_collector: StatisticsCollector):
+    assert filtered_stats_collector._include_name(INCLUDED)
+    assert not filtered_stats_collector._include_name(EXCLUDED)
+
+
+def test_name_versions(stats_collector: StatisticsCollector):
+    assert stats_collector.names_versions is None
+
+    stats_collector.process_msg(
+        stats_collector.names_topic,
+        StatisticsNames(names=['alice'], names_version=10),
+    )
+
+    assert stats_collector.names_versions is not None
+    assert 10 in stats_collector.names_versions
+    assert len(stats_collector.names_versions) == 1
+
+    stats_collector.process_msg(
+        stats_collector.names_topic,
+        StatisticsNames(names=['alice', 'bob'], names_version=11),
+    )
+
+    assert 11 in stats_collector.names_versions
+    assert len(stats_collector.names_versions) == 2

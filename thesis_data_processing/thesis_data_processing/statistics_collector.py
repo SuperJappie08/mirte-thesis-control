@@ -82,6 +82,13 @@ class StatisticsCollector:
         return self.__max_names_verion
 
     @property
+    def names_versions(self) -> Optional[range]:
+        if self.min_names_version is not None and self.max_names_version is not None:
+            return range(self.min_names_version, self.max_names_version + 1)
+        else:
+            return None
+
+    @property
     def topics(self) -> set[str]:
         return {self.names_topic, self.values_topic}
 
@@ -135,26 +142,30 @@ class StatisticsCollector:
 
         self.__max_names_verion = msg.names_version
         self.__names.append(msg)
-        logger.info(
+        logger.debug(
             "Recieved new names for '%s' with version %d",
             self.base_topic,
             self.max_names_version,
         )
 
     def _process_values_msg(self, msg: 'StatisticsValues', try_process: bool = True) -> None:
-        # NOTE: Assert to make MyPy happy, and ensure assumptions are correct.
-        assert self.min_names_version is not None
-        assert self.max_names_version is not None
-
-        if msg.names_version not in range(self.min_names_version, self.max_names_version + 1):
-            logger.warning(
-                "Recieved new values for '%s', with unknown names version. (%d not in [%d, %d])",
-                self.base_topic,
-                msg.names_version,
-                self.min_names_version,
-                self.max_names_version,
-            )
-            try_process = False
+        if try_process:
+            if self.names_versions is None:
+                logger.warning(
+                    "Recieved new values for '%s', while not having recieved the names yet.",
+                    self.base_topic,
+                )
+                try_process = False
+            elif msg.names_version not in self.names_versions:
+                logger.warning(
+                    "Recieved new values for '%s', with unknown names version."
+                    ' (%d not in [%d, %d])',
+                    self.base_topic,
+                    msg.names_version,
+                    self.min_names_version,
+                    self.max_names_version,
+                )
+                try_process = False
 
         self.__values.append(msg)
         if try_process:
@@ -175,12 +186,14 @@ class StatisticsCollector:
 
         # NOTE: Assert to make MyPy happy, and ensure assumptions are correct.
         assert self.__processed_names_until is not None
-        assert self.min_names_version is not None
-        assert self.max_names_version is not None
+        assert self.min_names_version is not None  # Implied by self.__processed_names_until
+        assert self.max_names_version is not None  # Should be implied by self.min_names_version
+        # Implied by self.min_names_version and self.max_names_version
+        assert self.names_versions is not None
 
         while self.__processed_values_until < len(self.__values):
             msg = self.__values[self.__processed_values_until]
-            if msg.names_version not in range(self.min_names_version, self.max_names_version + 1):
+            if msg.names_version not in self.names_versions:
                 logger.warning(
                     'Skipping because of missing names version %d (recieved versions [%d, %d])',
                     msg.names_version,

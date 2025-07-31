@@ -19,9 +19,8 @@ import itertools
 from pathlib import Path
 from typing import cast, Optional, TYPE_CHECKING
 
-# TODO: Check if ControllerManagerActivity is neccesairy
-from controller_manager_msgs.msg import ControllerManagerActivity
 import numpy as np
+import pandas as pd
 from rosbag2_py import StorageFilter
 from rosbag2_py import StorageOptions
 from scipy.optimize import curve_fit
@@ -31,6 +30,8 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 if TYPE_CHECKING:
     from types import ModuleType
 
+    from controller_manager_msgs.msg import ControllerManagerActivity
+    from controller_manager_msgs.msg import NamedLifecycleState
     from rosbag2_py import BagMetadata
 
     logging: ModuleType
@@ -41,6 +42,16 @@ try:
     logging = colorlog
 except ImportError:
     import logging
+
+# LIFECYCLE_ACTIVE_ID is hard-coded, but if the messages are available, it will be verified.
+try:
+    LIFECYCLE_ACTIVE_ID: int = 3
+    from lifecycle_msgs.msg import State
+
+    assert LIFECYCLE_ACTIVE_ID == State.PRIMARY_STATE_ACTIVE
+except ImportError:
+    pass
+
 
 from . import DataConsistencyChecker
 from . import open_rosbag
@@ -84,16 +95,22 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         regex_to_exclude='.*/_service_event',
     )
 
-    names_to_keep = {
-        f'{interface}_interface.{fb_pos}_{side}_wheel_joint/velocity'
-        for interface, fb_pos, side in itertools.product(
-            ('command', 'state'),
-            ('front', 'rear'),
-            ('left', 'right'),
-        )
+    wheel_names: set[str] = {
+        f'{fb_pos}_{side}_wheel_joint'
+        for fb_pos, side in itertools.product(('front', 'rear'), ('left', 'right'))
     }
 
-    for rosbag_path in tqdm(sorted(data_folder.glob('*')), desc='Bags', position=0):
+    names_to_keep: set[str] = {
+        f'{interface}_interface.{wheel_name}/velocity'
+        for interface, wheel_name in itertools.product(('command', 'state'), wheel_names)
+    }
+
+    bode_df: pd.DataFrame = pd.DataFrame(
+        columns=pd.MultiIndex.from_product([wheel_names, ('gain', 'phase')]),
+    )
+    bode_df.index.name = 'frequency'
+
+    for rosbag_path in tqdm(sorted(data_folder.glob('*')), desc='Bags'):
         logger.info("Processing '%s'", str(rosbag_path.stem))
         with (
             open_rosbag(StorageOptions(uri=str(rosbag_path))) as reader,
@@ -109,10 +126,17 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             frequency = float(custom_metadata[FREQUENCY_KEY])
             offset = float(custom_metadata[OFFSET_KEY])
 
-            total_msg_count = sum(
-                topic_metadata.message_count
-                for topic_metadata in metadata.topics_with_message_count
-                if topic_metadata.topic_metadata.name in storage_filter.topics
+            # total_msg_count = sum(
+            #     topic_metadata.message_count
+            #     for topic_metadata in metadata.topics_with_message_count
+            #     if topic_metadata.topic_metadata.name in storage_filter.topics
+            # )
+
+            # NOTE: There is a default as fallback, since first preliminary recording did not store
+            #       this data.
+            controller_name = custom_metadata.get(
+                'controller_name',
+                'multi_wheel_response_controller',
             )
 
             statistics_collector = StatisticsCollector(
@@ -121,47 +145,54 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             )
 
             accepting_data: bool = False
-            for topic, msg, recv_time in tqdm(
-                read_messages(reader, storage_filter),
-                total=total_msg_count,
-                position=1,
-                desc='Messages',
-            ):
-                if topic.endswith('/activity') and not accepting_data:
-                    assert isinstance(msg, ControllerManagerActivity)
-                    # if msg.controllers:
-                    # logger.debug('Beginning of the measurement')
-                    # if not accepting_data:
-                    #     raise NotImplementedError(
-                    #         'TODO: Start collecting data when controller activates,'
-                    #         ' (for when serivce fails) %s',
-                    #         msg,
-                    #     )
-                    accepting_data = True
-                if topic.endswith('/names'):
-                    accepting_data = True
-                # print(topic, type(topic))
-                # print(msg, type(msg))
-                # print(recv_time, type(recv_time))
+            for topic, msg, recv_time in read_messages(reader, storage_filter):
+                # tqdm( ,total=total_msg_count, position=1, desc='Messages'):
+                if topic.endswith('/activity'):
+                    controller_status: 'NamedLifecycleState' = next(
+                        filter(
+                            lambda controller: controller.name == controller_name,
+                            cast('ControllerManagerActivity', msg).controllers,
+                        ),
+                    )
+
+                    # TODO: Maybe do this the time stamps instead to prevent different ordering
+                    accepting_data = controller_status.state.id == LIFECYCLE_ACTIVE_ID
+                    logger.info(
+                        "%s recording data on '%s'",
+                        'Started' if accepting_data else 'Stopped',
+                        statistics_collector.base_topic,
+                    )
 
                 if topic.startswith(statistics_collector.base_topic) and (
                     accepting_data or topic.endswith('/names')
                 ):
-                    statistics_collector.process_msg(topic, msg, try_process=True)
+                    statistics_collector.process_msg(topic, msg, try_process=False)
 
-            continue
-            print(statistics_collector.data)
-            break
+            bag_df = statistics_collector.data.copy(True)
+            bag_df.index = bag_df.index - bag_df.index.min()
 
-            xdata = 0
-            ydata = 0
+            xdata = bag_df.index.to_numpy(dtype=np.float64)
+            bode_df.loc[frequency] = {
+                wheel_name: dict.fromkeys(('gain', 'phase'), np.nan)
+                for wheel_name in wheel_names
+            }
 
-            angular_frequency = 2.0 * np.pi * frequency
-            curve_fit(
-                lambda x, gain, phase: gain * np.sin(angular_frequency * x + phase) + offset,
-                xdata,
-                ydata,
-                np.zeros(2),
-            )
+            for wheel_name in wheel_names:
+                interface_name = f'state_interface.{wheel_name}/velocity'
+
+                ydata = bag_df[interface_name].to_numpy(dtype=np.float64)
+
+                angular_frequency = 2.0 * np.pi * frequency
+                (gain, phase), _ = curve_fit(
+                    lambda x, gain, phase: gain * np.sin(angular_frequency * x + phase) + offset,
+                    xdata,
+                    ydata,
+                    np.zeros(2),
+                )
+
+                bode_df.loc[frequency, (wheel_name, 'gain')] = gain
+                bode_df.loc[frequency, (wheel_name, 'phase')] = phase
+
+    # FIXME: ADD DATA EXPORT MODES (So make plot, save plot, save data)
 
     raise NotImplementedError()

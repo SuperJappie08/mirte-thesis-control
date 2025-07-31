@@ -2,7 +2,7 @@
 <launch>
   <arg name="audit-progress" default="False" />
 
-  <arg name="controller_name" />
+  <arg name="controller_name" default="multi_wheel_response_controller" />
 
   <arg name="measurement_type" default="prelim-freq" />
   <arg name="measurement_name"

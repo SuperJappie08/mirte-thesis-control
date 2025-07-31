@@ -231,6 +231,8 @@ def main(args=None):
 
             custom_data['extra_notes'] = params.extra_notes
 
+            custom_data['controller_name'] = params.controller_name
+
             recorder_options = rosbag2_py.RecordOptions()
             recorder_options.topics = list(
                 set(

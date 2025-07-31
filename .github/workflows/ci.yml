@@ -22,7 +22,6 @@ jobs:
             ros_distro: jazzy
             ubuntu: noble
             linter: mypy
-            # linter: [ lint_cmake]
 
     steps:
       - name: Checkout code
