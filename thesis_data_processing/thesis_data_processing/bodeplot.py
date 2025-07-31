@@ -19,6 +19,7 @@ import itertools
 from pathlib import Path
 from typing import cast, Optional, TYPE_CHECKING
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from rosbag2_py import StorageFilter
@@ -61,6 +62,7 @@ from . import StatisticsCollector
 logger = logging.getLogger(__name__)
 
 FREQUENCY_KEY = 'sinusoid.frequency'
+AMPLITUDE_KEY = 'sinusoid.amplitude'
 OFFSET_KEY = 'sinusoid.offset'
 
 
@@ -124,6 +126,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             assert datachecker.check(custom_metadata), f"Bag '{rosbag_path.stem}' is inconsistent!"
 
             frequency = float(custom_metadata[FREQUENCY_KEY])
+            amplitude = float(custom_metadata[AMPLITUDE_KEY])
             offset = float(custom_metadata[OFFSET_KEY])
 
             # total_msg_count = sum(
@@ -173,8 +176,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
             xdata = bag_df.index.to_numpy(dtype=np.float64)
             bode_df.loc[frequency] = {
-                wheel_name: dict.fromkeys(('gain', 'phase'), np.nan)
-                for wheel_name in wheel_names
+                wheel_name: dict.fromkeys(('gain', 'phase'), np.nan) for wheel_name in wheel_names
             }
 
             for wheel_name in wheel_names:
@@ -183,16 +185,64 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 ydata = bag_df[interface_name].to_numpy(dtype=np.float64)
 
                 angular_frequency = 2.0 * np.pi * frequency
+                f = lambda x, gain, phase: (  # noqa: E731
+                    gain * amplitude * np.sin(angular_frequency * x + phase) + offset
+                )
                 (gain, phase), _ = curve_fit(
-                    lambda x, gain, phase: gain * np.sin(angular_frequency * x + phase) + offset,
-                    xdata,
-                    ydata,
-                    np.zeros(2),
+                    f,
+                    xdata[5:-5],
+                    ydata[5:-5],
+                    np.array([1.0, 0.0]),
+                    bounds=([0.0, -2 * np.pi], [np.inf, 2 * np.pi]),
                 )
 
+                print(wheel_name, frequency, gain, amplitude, gain / amplitude)
                 bode_df.loc[frequency, (wheel_name, 'gain')] = gain
                 bode_df.loc[frequency, (wheel_name, 'phase')] = phase
 
+                if False:
+                    plt.plot(
+                        xdata[5:-5],
+                        bag_df[f'command_interface.{wheel_name}/velocity'].to_numpy(
+                            dtype=np.float64
+                        )[5:-5],
+                        label='command',
+                    )
+                    plt.plot(xdata[5:-5], ydata[5:-5], label='measurement')
+                    plt.plot(xdata[5:-5], f(xdata[5:-5], gain, phase), label='fit')
+                    plt.xticks(xdata[5:-5:100])
+                    plt.xlabel('Time (s)')
+                    plt.ylabel('speed (rad/s)')
+                    plt.legend()
+                    plt.show()
+
     # FIXME: ADD DATA EXPORT MODES (So make plot, save plot, save data)
+    for idx, wheel_name in enumerate(wheel_names):
+        title_wheel_name = wheel_name.removesuffix('_joint').replace('_', ' ')
+        fig, [ax_gain, ax_phase] = plt.subplots(2, 1, sharex=True)
+        assert isinstance(ax_gain, plt.Axes)
+        assert isinstance(ax_phase, plt.Axes)
+
+        ax_gain.set_title(f'{title_wheel_name} -- Gain')
+        ax_gain.set_xscale('log')
+        ax_gain.set_yscale('log')
+        ax_gain.grid(True, axis='both', which='both')
+        # ax_gain.plot(
+        #     bode_df.index.to_numpy(),
+        #     np.log(bode_df.loc[:, (wheel_name, 'gain')].to_numpy())/np.log(20.0),
+        #     '-o',
+        # )
+        ax_gain.plot(
+            bode_df.index.to_numpy(),
+            bode_df.loc[:, (wheel_name, 'gain')].to_numpy(),
+            '-o',
+        )
+
+        ax_phase.set_title(f'{title_wheel_name} -- Phase')
+        ax_phase.set_xscale('log')
+        ax_phase.grid(True, axis='both', which='both')
+        ax_phase.plot(bode_df.index, np.rad2deg(bode_df.loc[:, (wheel_name, 'phase')]), '-o')
+
+        plt.show(block=(idx + 1 == len(wheel_names)))
 
     raise NotImplementedError()
