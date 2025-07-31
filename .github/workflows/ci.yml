@@ -16,17 +16,19 @@ jobs:
         include:
           - ros_distro: jazzy
             ubuntu: noble
-          - ros_distro: jazzy
-            package: wheel_response_recorder
+          # Do mypy separatem as it is a very strict requirement
+          - package: wheel_response_recorder
+            ros_distro: jazzy
+            ubuntu: noble
             linter: mypy
             # linter: [ lint_cmake]
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-      - name: Setup ROS environment
-        uses: ros-tooling/setup-ros@v0.7
-        with:
-          required-ros-distributions: ${{ matrix.ros_distro }}
+      # - name: Setup ROS environment
+      #   uses: ros-tooling/setup-ros@v0.7
+      #   with:
+      #     required-ros-distributions: ${{ matrix.ros_distro }}
       - name: Run Linter
         env:
           AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS: 1
