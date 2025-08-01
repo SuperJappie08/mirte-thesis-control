@@ -347,8 +347,8 @@ def main(args=None):
                 with controller_context_manager:
                     task = exc.create_task(time.sleep, recording_duration)
                     logger.info(
-                        'Started recording with %s',
-                        ' '.join(sorted(f'{k} = {v}' for k, v in new_params)),
+                        'Started recording with %s'
+                        % ' '.join(sorted(f'{k} = {v}' for k, v in new_params)),
                     )
 
                     exc.spin_until_future_complete(task)

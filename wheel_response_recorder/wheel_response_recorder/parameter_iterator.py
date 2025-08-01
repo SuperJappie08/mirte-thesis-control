@@ -127,7 +127,7 @@ class ParameterIterator(Iterable[tuple[str, float]], Sized):
         try:
             setattribute(
                 self,
-                'iter',
+                'iterator',
                 PARAMITER_RESOLVE[self.kind](params),
             )
         except AssertionError as exc:

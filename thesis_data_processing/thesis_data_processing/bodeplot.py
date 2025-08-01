@@ -200,7 +200,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 bode_df.loc[frequency, (wheel_name, 'gain')] = gain
                 bode_df.loc[frequency, (wheel_name, 'phase')] = phase
 
-                if False and 'front_left' in wheel_name:
+                if True and 'front_left' in wheel_name:
                     plt.figure()
                     plt.title(f'{wheel_name} @ f = {frequency}Hz')
                     plt.plot(
@@ -240,7 +240,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             '-o',
         )
 
-        print(bode_df.loc[:, (wheel_name,)])
+        print(bode_df.loc[:, wheel_name])
 
         ax_phase.set_title(f'{title_wheel_name} -- Phase')
         ax_phase.set_xscale('log')
