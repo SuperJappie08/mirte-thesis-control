@@ -200,7 +200,9 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 bode_df.loc[frequency, (wheel_name, 'gain')] = gain
                 bode_df.loc[frequency, (wheel_name, 'phase')] = phase
 
-                if False:
+                if False and 'front_left' in wheel_name:
+                    plt.figure()
+                    plt.title(f'{wheel_name} @ f = {frequency}Hz')
                     plt.plot(
                         xdata[5:-5],
                         bag_df[f'command_interface.{wheel_name}/velocity'].to_numpy(
@@ -214,7 +216,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                     plt.xlabel('Time (s)')
                     plt.ylabel('speed (rad/s)')
                     plt.legend()
-                    plt.show()
+                    plt.show(block=False)
 
     # FIXME: ADD DATA EXPORT MODES (So make plot, save plot, save data)
     for idx, wheel_name in enumerate(wheel_names):
@@ -237,6 +239,8 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             bode_df.loc[:, (wheel_name, 'gain')].to_numpy(),
             '-o',
         )
+
+        print(bode_df.loc[:, (wheel_name,)])
 
         ax_phase.set_title(f'{title_wheel_name} -- Phase')
         ax_phase.set_xscale('log')

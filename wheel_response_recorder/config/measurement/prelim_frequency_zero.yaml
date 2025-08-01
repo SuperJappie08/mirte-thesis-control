@@ -9,7 +9,7 @@ response_director:
         kind: log
         start: -2.0
         stop: 1.0
-        num_steps: 40
+        num_steps: 41
       phase:
         kind: fixed
         value: 0.0
