@@ -17,7 +17,7 @@ from collections.abc import Sequence
 from copy import deepcopy
 import itertools
 from pathlib import Path
-from typing import cast, Optional, TYPE_CHECKING
+from typing import cast, Literal, Optional, TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -58,6 +58,7 @@ from . import DataConsistencyChecker
 from . import open_rosbag
 from . import read_messages
 from . import StatisticsCollector
+from .conversions import gain2dB
 
 logger = logging.getLogger(__name__)
 
@@ -188,7 +189,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 f = lambda x, gain, phase: (  # noqa: E731
                     gain * amplitude * np.sin(angular_frequency * x + phase) + offset
                 )
-                (gain, phase), _ = curve_fit(
+                (gain_scale, phase), _ = curve_fit(
                     f,
                     xdata[5:-5],
                     ydata[5:-5],
@@ -196,22 +197,22 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                     bounds=([0.0, -2 * np.pi], [np.inf, 2 * np.pi]),
                 )
 
-                print(wheel_name, frequency, gain, amplitude, gain / amplitude)
-                bode_df.loc[frequency, (wheel_name, 'gain')] = gain
+                print(wheel_name, frequency, gain_scale * amplitude, amplitude, gain_scale)
+                bode_df.loc[frequency, (wheel_name, 'gain')] = gain_scale
                 bode_df.loc[frequency, (wheel_name, 'phase')] = phase
 
-                if True and 'front_left' in wheel_name:
+                if False and 'front_left' in wheel_name:
                     plt.figure()
                     plt.title(f'{wheel_name} @ f = {frequency}Hz')
                     plt.plot(
                         xdata[5:-5],
                         bag_df[f'command_interface.{wheel_name}/velocity'].to_numpy(
-                            dtype=np.float64
+                            dtype=np.float64,
                         )[5:-5],
                         label='command',
                     )
                     plt.plot(xdata[5:-5], ydata[5:-5], label='measurement')
-                    plt.plot(xdata[5:-5], f(xdata[5:-5], gain, phase), label='fit')
+                    plt.plot(xdata[5:-5], f(xdata[5:-5], gain_scale, phase), label='fit')
                     plt.xticks(xdata[5:-5:100])
                     plt.xlabel('Time (s)')
                     plt.ylabel('speed (rad/s)')
@@ -225,27 +226,52 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         assert isinstance(ax_gain, plt.Axes)
         assert isinstance(ax_phase, plt.Axes)
 
-        ax_gain.set_title(f'{title_wheel_name} -- Gain')
+        fig.suptitle(f'{title_wheel_name} - Bode Plot')
+
+        plot_gain_scale: Literal['dB'] | Literal['log'] = 'dB'
+        plot_phase_scale: Literal['rad'] | Literal['degrees'] = 'degrees'
+
+        # ax_gain.set_title('Magnitude Gain')
         ax_gain.set_xscale('log')
-        ax_gain.set_yscale('log')
         ax_gain.grid(True, axis='both', which='both')
-        # ax_gain.plot(
-        #     bode_df.index.to_numpy(),
-        #     np.log(bode_df.loc[:, (wheel_name, 'gain')].to_numpy())/np.log(20.0),
-        #     '-o',
-        # )
-        ax_gain.plot(
-            bode_df.index.to_numpy(),
-            bode_df.loc[:, (wheel_name, 'gain')].to_numpy(),
-            '-o',
-        )
+        match plot_gain_scale:
+            case 'log':
+                ax_gain.set_yscale('log')
+                ax_gain.set_ylabel('Magnitude Gain [-]')
+                ax_gain.plot(
+                    bode_df.index.to_numpy(),
+                    bode_df.loc[:, (wheel_name, 'gain')].to_numpy(),
+                    '-o',
+                )
+            case 'dB':
+                ax_gain.set_yscale('linear')
+                ax_gain.set_ylabel('Magnitude Gain [dB]')
+                ax_gain.plot(
+                    bode_df.index.to_numpy(),
+                    gain2dB(bode_df.loc[:, (wheel_name, 'gain')].to_numpy()),
+                    '-o',
+                )
+            case _:
+                raise ValueError('Unknown plot Magnitude/Gain scale')
 
         print(bode_df.loc[:, wheel_name])
 
-        ax_phase.set_title(f'{title_wheel_name} -- Phase')
+        # ax_phase.set_title(f'{title_wheel_name} -- Phase')
         ax_phase.set_xscale('log')
         ax_phase.grid(True, axis='both', which='both')
-        ax_phase.plot(bode_df.index, np.rad2deg(bode_df.loc[:, (wheel_name, 'phase')]), '-o')
+        match plot_phase_scale:
+            case 'rad':
+                ax_phase.set_ylabel('Phase [rad]')
+                ax_phase.plot(bode_df.index, bode_df.loc[:, (wheel_name, 'phase')], '-o')
+            case 'degrees':
+                ax_phase.set_ylabel('Phase [degrees]')
+                ax_phase.plot(
+                    bode_df.index,
+                    np.rad2deg(bode_df.loc[:, (wheel_name, 'phase')]),
+                    '-o',
+                )
+            case _:
+                raise ValueError('Unknown plot Phase scale')
 
         plt.show(block=(idx + 1 == len(wheel_names)))
 

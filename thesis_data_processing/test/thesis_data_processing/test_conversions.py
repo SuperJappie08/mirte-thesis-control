@@ -12,16 +12,21 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from . import conversions
-from .data_consistency_checker import DataConsistencyChecker
-from .rosbag_reader_utils import open_rosbag
-from .rosbag_reader_utils import read_messages
-from .statistics_collector import StatisticsCollector
+import numpy as np
 
-__all__ = [
-    'DataConsistencyChecker',
-    'StatisticsCollector',
-    'conversions',
-    'open_rosbag',
-    'read_messages',
-]
+from thesis_data_processing.conversions import dB2gain
+from thesis_data_processing.conversions import gain2dB
+
+
+def test_gain2db():
+    assert np.allclose(
+        gain2dB(np.asarray((1e-2, 1e-1, 1e0, 1e1, 1e2))),
+        np.asarray((-40.0, -20.0, 0.0, 20.0, 40.0)),
+    )
+
+
+def test_db2gain():
+    assert np.allclose(
+        dB2gain((-40.0, -20.0, 0.0, 20.0, 40.0)),
+        np.asarray((1e-2, 1e-1, 1e0, 1e1, 1e2)),
+    )

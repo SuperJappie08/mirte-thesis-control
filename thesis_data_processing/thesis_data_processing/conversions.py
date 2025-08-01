@@ -11,17 +11,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+from typing import TYPE_CHECKING
 
-from . import conversions
-from .data_consistency_checker import DataConsistencyChecker
-from .rosbag_reader_utils import open_rosbag
-from .rosbag_reader_utils import read_messages
-from .statistics_collector import StatisticsCollector
+import numpy as np
 
-__all__ = [
-    'DataConsistencyChecker',
-    'StatisticsCollector',
-    'conversions',
-    'open_rosbag',
-    'read_messages',
-]
+if TYPE_CHECKING:
+    import numpy.typing as npt
+
+
+def gain2dB(gains: 'npt.ArrayLike') -> np.ndarray:
+    return 20.0 * np.log10(gains)
+
+
+def dB2gain(dbs: 'npt.ArrayLike') -> np.ndarray:
+    return 10.0 ** (np.divide(dbs, 20.0))
