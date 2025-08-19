@@ -71,16 +71,48 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
         'bodeplotter',
-        description='Use on a folder of created data to make a bodeplot',
-    )
+        description='Use on a folder of created data to make a bodeplot')
     parser.add_argument(
         'folder',
-        type=Path,
-        help='The folder containing the rosbags',
-        metavar='FOLDER',
-    )
+        type=Path, metavar='FOLDER',
+        help='The folder containing the rosbags')
+    parser.add_argument(
+        '-f', '--plot-frequency',
+        action='append', nargs='*',
+        type=float, required=False,
+        help='The frequencies of the trails to plot separately.')
+    parser.add_argument(
+        '-w', '--plot-wheel',
+        action='store', default='front_left',
+        type=str, required=False,
+        help=('Which wheels to plot the supplied frequencies for. '
+              "'all' to plot all. Default is 'front_left'"))
+
+    bode_plot_group = parser.add_argument_group('Bode plot style')
+    bode_plot_group.add_argument(
+        '-m', '--magnitude-unit',
+        choices=['dB', 'log'], default='dB',
+        help='The units of the magnitude axis')
+    bode_plot_group.add_argument(
+        '-p', '--phase-unit',
+        choices=['degrees', 'rad'], default='degrees',
+        help='The units of the phase axis')
 
     parsed_args = parser.parse_args(args)
+
+    plot_frequencies = None
+    remaining_plot_frequencies: list[float] = []
+    if parsed_args.plot_frequency:
+        plot_frequencies = np.asarray(
+            sorted(itertools.chain.from_iterable(parsed_args.plot_frequency)), dtype=np.float64)
+        remaining_plot_frequencies.extend(plot_frequencies.tolist())
+    wheels_to_plot = parsed_args.plot_wheel
+
+    # Bode Plot Settings
+    bodeplot_gain_scale: Literal['dB'] | Literal['log'] = parsed_args.magnitude_unit
+    bodeplot_phase_scale: Literal['rad'] | Literal['degrees'] = parsed_args.phase_unit
+
+    # Data settings
     data_folder: Path = cast(Path, parsed_args.folder).absolute()
 
     assert data_folder.is_dir(), "The speficied 'FOLDER' must be a folder containing rosbags"
@@ -113,6 +145,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     )
     bode_df.index.name = 'frequency'
 
+    previous_frequency: Optional[float] = None
     for rosbag_path in tqdm(sorted(data_folder.glob('*')), desc='Bags'):
         logger.info("Processing '%s'", str(rosbag_path.stem))
         with (
@@ -129,12 +162,6 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             frequency = float(custom_metadata[FREQUENCY_KEY])
             amplitude = float(custom_metadata[AMPLITUDE_KEY])
             offset = float(custom_metadata[OFFSET_KEY])
-
-            # total_msg_count = sum(
-            #     topic_metadata.message_count
-            #     for topic_metadata in metadata.topics_with_message_count
-            #     if topic_metadata.topic_metadata.name in storage_filter.topics
-            # )
 
             # NOTE: There is a default as fallback, since first preliminary recording did not store
             #       this data.
@@ -180,6 +207,16 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 wheel_name: dict.fromkeys(('gain', 'phase'), np.nan) for wheel_name in wheel_names
             }
 
+            do_plot = plot_frequencies is not None and (
+                any(np.isclose(frequency, plot_frequencies)) or
+                previous_frequency is not None and bool(remaining_plot_frequencies) and
+                previous_frequency < frequency and frequency >= remaining_plot_frequencies[0])
+
+            if do_plot:
+                remaining_plot_frequencies.pop(0)
+
+            previous_frequency = frequency
+
             for wheel_name in wheel_names:
                 interface_name = f'state_interface.{wheel_name}/velocity'
 
@@ -197,11 +234,10 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                     bounds=([0.0, -2 * np.pi], [np.inf, 2 * np.pi]),
                 )
 
-                print(wheel_name, frequency, gain_scale * amplitude, amplitude, gain_scale)
                 bode_df.loc[frequency, (wheel_name, 'gain')] = gain_scale
                 bode_df.loc[frequency, (wheel_name, 'phase')] = phase
 
-                if False and 'front_left' in wheel_name:
+                if do_plot and (wheels_to_plot == 'all' or wheels_to_plot in wheel_name):
                     plt.figure()
                     plt.title(f'{wheel_name} @ f = {frequency}Hz')
                     plt.plot(
@@ -228,13 +264,10 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
         fig.suptitle(f'{title_wheel_name} - Bode Plot')
 
-        plot_gain_scale: Literal['dB'] | Literal['log'] = 'dB'
-        plot_phase_scale: Literal['rad'] | Literal['degrees'] = 'degrees'
-
         # ax_gain.set_title('Magnitude Gain')
         ax_gain.set_xscale('log')
         ax_gain.grid(True, axis='both', which='both')
-        match plot_gain_scale:
+        match bodeplot_gain_scale:
             case 'log':
                 ax_gain.set_yscale('log')
                 ax_gain.set_ylabel('Magnitude Gain [-]')
@@ -259,7 +292,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         # ax_phase.set_title(f'{title_wheel_name} -- Phase')
         ax_phase.set_xscale('log')
         ax_phase.grid(True, axis='both', which='both')
-        match plot_phase_scale:
+        match bodeplot_phase_scale:
             case 'rad':
                 ax_phase.set_ylabel('Phase [rad]')
                 ax_phase.plot(bode_df.index, bode_df.loc[:, (wheel_name, 'phase')], '-o')
