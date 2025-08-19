@@ -24,6 +24,9 @@
       <param name="storage_location" value="$(var storage_location)" />
 
       <param name="controller_name" value="$(var controller_name)" />
+      <param name="recorded_services" type="list_of_str" value="" value-sep=","/>
+      <param name="recorded_topics" type="list_of_str" value="" value-sep=","/>
+      <param name="wait_for_telemetrix" type="bool" value="False" />
 
       <param name="sinusoid">
         <param name="amplitude">

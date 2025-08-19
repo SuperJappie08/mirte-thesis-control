@@ -28,6 +28,12 @@ response_director:
     description: "Howlong to wait for nodes to be available (.INF is infinite)"
     read_only: true
 
+  wait_for_telemetrix:
+    type: bool
+    default_value: true
+    description: "If the recorder will wait for the telemetrix node to be available"
+    read_only: true
+
   progressbar:
     type: bool
     default_value: False
