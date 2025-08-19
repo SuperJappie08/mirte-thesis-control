@@ -1,0 +1,55 @@
+step_response_controller:
+  command_joint_names:
+    type: string_array
+    default_value: []
+    description: "Names of the joints to be commanded."
+    read_only: true
+    validation:
+      unique<>: null
+      not_empty<>: null
+
+  # FIXME(SuperJappie08) Currently unused, maybe remove
+  state_joint_names:
+    type: string_array
+    default_value: []
+    description: "Names of the joints to measure state from."
+    read_only: true
+    validation:
+      unique<>: null
+      not_empty<>: null
+
+  interface_name:
+    type: string
+    default_value: ""
+    description: "Name of the interface to command"
+    validation:
+      not_empty<>: null
+
+  reset_command_on_deactivate:
+    type: double
+    default_value: .NAN
+    description: "Reset the command interface to the specified value. (.NAN == No Reset)"
+
+  step:
+    initial_commmand:
+      type: double
+      default_value: 0.0
+      description: "The initial command value (from -INF to t_step)"
+      validation:
+        wheel_response_controller::is_real: null
+
+    step_command:
+      type: double
+      default_value: 1.0
+      description: "The final command value (from t_step untill +INF)"
+      validation:
+        wheel_response_controller::is_real: null
+
+    t_step:
+      type: double
+      default_value: 1.0
+      description: "The time after activation at which the step will occure"
+      validation:
+        gt_eq<>: 0.0
+        wheel_response_controller::is_real: null
+    

@@ -14,8 +14,14 @@ generate_parameter_library(wheel_response_controller_parameters
   include/wheel_response_controller/validators.hpp)
 list(APPEND ${PROJECT_NAME}_LIBRARIES "wheel_response_controller_parameters")
 
+generate_parameter_library(step_response_controller_parameters
+  src/step_response_controller_parameters.yaml
+  include/wheel_response_controller/validators.hpp)
+list(APPEND ${PROJECT_NAME}_LIBRARIES "step_response_controller_parameters")
+
 ament_auto_add_library(${PROJECT_NAME} SHARED
   src/wheel_response_controller.cpp
+  src/step_response_controller.cpp
 )
 
 pluginlib_export_plugin_description_file(controller_interface wheel_response_controller.xml)

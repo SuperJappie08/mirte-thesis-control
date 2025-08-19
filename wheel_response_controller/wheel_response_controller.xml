@@ -3,4 +3,8 @@
     base_class_type="controller_interface::ControllerInterface">
     <description>A controller to measure the frequency response of a Wheel (or any other single state element)</description>
   </class>
+  <class name="wheel_response_controller/StepResponseController" type="wheel_response_controller::StepResponseController"
+    base_class_type="controller_interface::ControllerInterface">
+    <description>A controller to measure the step response of a Wheel (or any other single state element)</description>
+  </class>
 </library>
