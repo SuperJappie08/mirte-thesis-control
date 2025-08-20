@@ -12,4 +12,4 @@ response_director:
       - io/motor/front_right/speed
       - io/motor/rear_left/speed
       - io/motor/rear_right/speed
-    recorded_services: []
+    recorded_services: ['']

@@ -9,4 +9,4 @@ response_director:
       - io/encoder/rear_right
       # Motors
       - io/motor/motorservocontroller/multi_speed
-    recorded_services: []
+    recorded_services: ['']
