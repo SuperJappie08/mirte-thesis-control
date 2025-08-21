@@ -9,8 +9,7 @@
     <choice value="topic_based" />
   </arg>
 
-  <executable cmd="ros2 control set_controller_state mirte_base_controller inactive" />
-  <executable cmd="ros2 control set_controller_state pid_wheels_controller inactive" />
+  <executable cmd="ros2 control switch_controllers --deactivate mirte_base_controller pid_wheels_controller" />
 
   <executable
     cmd="ros2 param set io/telemetrix modules.motorservocontroller.service_introspection true"
