@@ -3,8 +3,12 @@ response_director:
   ros__parameters:
     recorded_topics:
       - io/encoder/front_left
+      - io/encoder/front_left/update
       - io/encoder/front_right
+      - io/encoder/front_right/update
       - io/encoder/rear_left
+      - io/encoder/rear_left/update
       - io/encoder/rear_right
+      - io/encoder/rear_right/update
     recorded_services:
       - io/motor/motorservocontroller/set_multiple_speeds

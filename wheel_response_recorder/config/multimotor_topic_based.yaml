@@ -4,9 +4,13 @@ response_director:
     recorded_topics:
       # Encoders
       - io/encoder/front_left
+      - io/encoder/front_left/update
       - io/encoder/front_right
+      - io/encoder/front_right/update
       - io/encoder/rear_left
+      - io/encoder/rear_left/update
       - io/encoder/rear_right
+      - io/encoder/rear_right/update
       # Motors
       - io/motor/motorservocontroller/multi_speed
     recorded_services: ['']
