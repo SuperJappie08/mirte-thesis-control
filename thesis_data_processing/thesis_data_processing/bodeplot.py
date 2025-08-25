@@ -97,6 +97,10 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         '-p', '--phase-unit',
         choices=['degrees', 'rad'], default='degrees',
         help='The units of the phase axis')
+    bode_plot_group.add_argument(
+        '--phase-method',
+        choices=['zero', 'continuous'], default='zero',
+        help='How the phase is constraint during the calculations')
 
     parsed_args = parser.parse_args(args)
 
@@ -111,6 +115,8 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     # Bode Plot Settings
     bodeplot_gain_scale: Literal['dB'] | Literal['log'] = parsed_args.magnitude_unit
     bodeplot_phase_scale: Literal['rad'] | Literal['degrees'] = parsed_args.phase_unit
+
+    bodeplot_phase_method: Literal['zero'] | Literal['continuous'] = parsed_args.phase_method
 
     # Data settings
     data_folder: Path = cast(Path, parsed_args.folder).absolute()
@@ -222,20 +228,36 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
                 ydata = bag_df[interface_name].to_numpy(dtype=np.float64)
 
-                angular_frequency = 2.0 * np.pi * frequency
+                sel_gain = (wheel_name, 'gain')
+                sel_phase = (wheel_name, 'phase')
+
+                if bodeplot_phase_method == 'continuous':
+                    initial_phase = (
+                        0.0 if len(bode_df.loc[:, sel_phase]) < 2
+                        else bode_df.loc[:, sel_phase].iat[-2]
+                    )
+                else:
+                    assert bodeplot_phase_method == 'zero'
+                    initial_phase = 0.0
+
+                # angular_frequency = 2.0 * np.pi * frequency
                 f = lambda x, gain, phase: (  # noqa: E731
-                    gain * amplitude * np.sin(angular_frequency * x + phase) + offset
+                    gain * amplitude * np.sin(frequency * (2.0 * np.pi * x - phase)) + offset
                 )
                 (gain_scale, phase), _ = curve_fit(
                     f,
                     xdata[5:-5],
                     ydata[5:-5],
-                    np.array([1.0, 0.0]),
-                    bounds=([0.0, -2 * np.pi], [np.inf, 2 * np.pi]),
+                    np.array([1.0, initial_phase]),
+                    # bounds=([0.0, - np.pi], [np.inf, np.pi]),
+                    bounds=(
+                        [0.0, initial_phase - np.inf],
+                        [np.inf, initial_phase + np.pi],
+                    ),
                 )
 
-                bode_df.loc[frequency, (wheel_name, 'gain')] = gain_scale
-                bode_df.loc[frequency, (wheel_name, 'phase')] = phase
+                bode_df.loc[frequency, sel_gain] = gain_scale
+                bode_df.loc[frequency, sel_phase] = phase
 
                 if do_plot and (wheels_to_plot == 'all' or wheels_to_plot in wheel_name):
                     plt.figure()
