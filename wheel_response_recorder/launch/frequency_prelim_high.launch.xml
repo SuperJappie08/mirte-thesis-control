@@ -1,0 +1,62 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<launch>
+  <arg name="audit-progress" default="False" />
+
+  <arg name="controller_name" default="multi_wheel_response_controller" />
+
+  <arg name="measurement_mode">
+    <choice value="offset"/>
+    <choice value="zero"/>
+  </arg>
+
+  <arg name="measurement_type" default="prelim-freq-high-$(var measurement_mode)" />
+  <arg name="measurement_name"
+    default="$(var measurement_type)-$(eval 'datetime.datetime.now().isoformat(timespec=\'minutes\').replace(\':\', \'\')' datetime)" />
+  <log message="Starting measurement '$(var measurement_name)'" />
+
+  <arg name="sinusoid_param_file" default="prelim_frequency_high_$(var measurement_mode).yaml"
+    description="The sinusoid iteration configuration file (located in config/measurement)" />
+  <arg name="sinusoid_param_fullpath"
+    default="$(find-pkg-share wheel_response_recorder)/config/measurement/$(var sinusoid_param_file)"
+    description="The sinusoid iteration configuration file (full path)" />
+
+  <log message="Using parameters '$(var sinusoid_param_fullpath)'" />
+
+  <arg name="measurements_folder" default="~/thesis/measurements" />
+  <let name="storage_location"
+    value="$(eval '\'$(var measurements_folder)\'.rstrip(\'/\')')/$(var measurement_name)" />
+  <log message="Saving the measurements to $(var storage_location)" />
+
+  <arg name="measurement_duration" default="5.0" />
+
+  <arg name="hw_interface">
+    <choice value="service_based" />
+    <choice value="multimotor_topic_based" />
+    <choice value="singlemotor_topic_based" />
+  </arg>
+
+  <arg name="extra_notes" default="" description="Extra notes to store with the measurements" />
+
+  <let name="hw_interface_specific_params_file"
+    value="$(find-pkg-share wheel_response_recorder)/config/$(var hw_interface).yaml" />
+
+  <group>
+    <let name="launch-prefix" value="xterm -geometry 160x2 -e" if="$(var audit-progress)" />
+
+    <node pkg="wheel_response_recorder" exec="response_director" on_exit="shutdown" output="screen"
+      emulate_tty="true">
+      <param name="progressbar" value="$(var audit-progress)" />
+      <param name="storage_location" value="$(var storage_location)" />
+
+      <param name="controller_name" value="$(var controller_name)" />
+
+      <param from="$(var hw_interface_specific_params_file)" />
+
+      <param name="measurement_duration" value="$(var measurement_duration)" />
+
+      <param name="extra_notes" value="$(var extra_notes)" />
+
+      <param from="$(var sinusoid_param_fullpath)" />
+    </node>
+  </group>
+</launch>

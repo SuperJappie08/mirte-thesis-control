@@ -76,11 +76,15 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         'folder',
         type=Path, metavar='FOLDER',
         help='The folder containing the rosbags')
-    parser.add_argument(
+    plot_frequency_group = parser.add_mutually_exclusive_group()
+    plot_frequency_group .add_argument(
         '-f', '--plot-frequency',
         action='append', nargs='*',
         type=float, required=False,
         help='The frequencies of the trails to plot separately.')
+    plot_frequency_group.add_argument(
+        '-F', '--plot-all-frequencies', action='store_true',
+        help='Plot the graphs at all frequencies.')
     parser.add_argument(
         '-w', '--plot-wheel',
         action='store', default='front_left',
@@ -104,6 +108,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
     parsed_args = parser.parse_args(args)
 
+    plot_all_frequencies = parsed_args.plot_all_frequencies
     plot_frequencies = None
     remaining_plot_frequencies: list[float] = []
     if parsed_args.plot_frequency:
@@ -259,7 +264,8 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 bode_df.loc[frequency, sel_gain] = gain_scale
                 bode_df.loc[frequency, sel_phase] = phase
 
-                if do_plot and (wheels_to_plot == 'all' or wheels_to_plot in wheel_name):
+                if (plot_all_frequencies or do_plot) and (
+                        wheels_to_plot == 'all' or wheels_to_plot in wheel_name):
                     plt.figure()
                     plt.title(f'{wheel_name} @ f = {frequency}Hz')
                     plt.plot(
