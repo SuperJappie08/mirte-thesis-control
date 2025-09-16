@@ -65,6 +65,7 @@ logger = logging.getLogger(__name__)
 FREQUENCY_KEY = 'sinusoid.frequency'
 AMPLITUDE_KEY = 'sinusoid.amplitude'
 OFFSET_KEY = 'sinusoid.offset'
+PHASE_OFFSET_KEY = 'sinusoid.phase'
 
 
 def main(args: Optional[Sequence[str]] = None) -> int:
@@ -76,21 +77,31 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         'folder',
         type=Path, metavar='FOLDER',
         help='The folder containing the rosbags')
-    plot_frequency_group = parser.add_mutually_exclusive_group()
-    plot_frequency_group .add_argument(
+    parser.add_argument(
+        '-N', '--filter-normal',
+        action='store_true', required=False,
+        help='Remove NAN and INF from data')
+
+    plot_frequency_group = parser.add_argument_group('Frequency plot configuration')
+    plot_frequency_select_group = plot_frequency_group.add_mutually_exclusive_group()
+    plot_frequency_select_group.add_argument(
         '-f', '--plot-frequency',
         action='append', nargs='*',
         type=float, required=False,
         help='The frequencies of the trails to plot separately.')
-    plot_frequency_group.add_argument(
+    plot_frequency_select_group.add_argument(
         '-F', '--plot-all-frequencies', action='store_true',
         help='Plot the graphs at all frequencies.')
-    parser.add_argument(
+    plot_frequency_group.add_argument(
         '-w', '--plot-wheel',
         action='store', default='front_left',
         type=str, required=False,
         help=('Which wheels to plot the supplied frequencies for. '
               "'all' to plot all. Default is 'front_left'"))
+    plot_frequency_group.add_argument(
+        '-df', '--debug-frequency',
+        action='store_true', required=False,
+        help='Debug frequency plot style')
 
     bode_plot_group = parser.add_argument_group('Bode plot style')
     bode_plot_group.add_argument(
@@ -108,6 +119,11 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
     parsed_args = parser.parse_args(args)
 
+    filter_data = parsed_args.filter_normal
+    if not filter_data:
+        logger.warning('The data is NOT filtered for NAN and INF [LEGACY] Might not work')
+
+    # Frequency plot options
     plot_all_frequencies = parsed_args.plot_all_frequencies
     plot_frequencies = None
     remaining_plot_frequencies: list[float] = []
@@ -116,6 +132,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             sorted(itertools.chain.from_iterable(parsed_args.plot_frequency)), dtype=np.float64)
         remaining_plot_frequencies.extend(plot_frequencies.tolist())
     wheels_to_plot = parsed_args.plot_wheel
+    debug_frequency_plot = parsed_args.debug_frequency
 
     # Bode Plot Settings
     bodeplot_gain_scale: Literal['dB'] | Literal['log'] = parsed_args.magnitude_unit
@@ -172,6 +189,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
             frequency = float(custom_metadata[FREQUENCY_KEY])
             amplitude = float(custom_metadata[AMPLITUDE_KEY])
+            phase_offset = float(custom_metadata[PHASE_OFFSET_KEY])
             offset = float(custom_metadata[OFFSET_KEY])
 
             # NOTE: There is a default as fallback, since first preliminary recording did not store
@@ -241,24 +259,45 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                         0.0 if len(bode_df.loc[:, sel_phase]) < 2
                         else bode_df.loc[:, sel_phase].iat[-2]
                     )
+                    max_phase = min(initial_phase + np.pi/2, 0)
+                    min_phase = max_phase - 2*np.pi
+
+                    if len(bode_df.loc[:, sel_phase]) < 2:
+                        initial_phase = (max_phase + min_phase)/2
                 else:
                     assert bodeplot_phase_method == 'zero'
                     initial_phase = 0.0
+                    max_phase = np.pi
+                    min_phase = -np.pi
+
+                print(initial_phase, max_phase, min_phase, max_phase-min_phase)
+
+                # Filter out nans
+                xdata_valid = np.isfinite(xdata[5:-5])
+                ydata_valid = np.isfinite(ydata[5:-5])
+                valid_data_mask = xdata_valid & ydata_valid
+
+                if not filter_data:
+                    valid_data_mask[:] = True
 
                 # angular_frequency = 2.0 * np.pi * frequency
                 f = lambda x, gain, phase: (  # noqa: E731
-                    gain * amplitude * np.sin(frequency * (2.0 * np.pi * x - phase)) + offset
+                    # TODO(SuperJappie08): 20250916 Is phase shift location correct???
+                    gain * amplitude * np.sin(
+                                          frequency * (2.0 * np.pi * x - phase) + phase_offset
+                                      ) + offset
                 )
                 (gain_scale, phase), _ = curve_fit(
                     f,
-                    xdata[5:-5],
-                    ydata[5:-5],
+                    xdata[5:-5][valid_data_mask],
+                    ydata[5:-5][valid_data_mask],
                     np.array([1.0, initial_phase]),
-                    # bounds=([0.0, - np.pi], [np.inf, np.pi]),
-                    bounds=(
-                        [0.0, initial_phase - np.inf],
-                        [np.inf, initial_phase + np.pi],
-                    ),
+                    bounds=([0.0, min_phase], [np.inf, max_phase]),
+                    # bounds=( # TODO: This could work if dynamically adjust the lower bound
+                    #     [0.0, initial_phase - np.pi/2],
+                    #     [np.inf, min(initial_phase + np.pi/2, 0)],
+                    #              # NOTE: Was a pi/3 at somepoint
+                    # ),
                 )
 
                 bode_df.loc[frequency, sel_gain] = gain_scale
@@ -266,6 +305,10 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
                 if (plot_all_frequencies or do_plot) and (
                         wheels_to_plot == 'all' or wheels_to_plot in wheel_name):
+                    freq_plot_extra_fmt = {}
+                    if debug_frequency_plot:
+                        freq_plot_extra_fmt['marker'] = '.'
+
                     plt.figure()
                     plt.title(f'{wheel_name} @ f = {frequency}Hz')
                     plt.plot(
@@ -274,9 +317,13 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                             dtype=np.float64,
                         )[5:-5],
                         label='command',
-                    )
-                    plt.plot(xdata[5:-5], ydata[5:-5], label='measurement')
-                    plt.plot(xdata[5:-5], f(xdata[5:-5], gain_scale, phase), label='fit')
+                        **freq_plot_extra_fmt)
+                    plt.plot(xdata[5:-5], ydata[5:-5], label='measurement', **freq_plot_extra_fmt)
+                    plt.plot(
+                        xdata[5:-5],
+                        f(xdata[5:-5], gain_scale, phase),
+                        label='fit',
+                        **freq_plot_extra_fmt)
                     plt.xticks(xdata[5:-5:100])
                     plt.xlabel('Time (s)')
                     plt.ylabel('speed (rad/s)')
