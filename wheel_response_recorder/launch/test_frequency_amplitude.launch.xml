@@ -53,7 +53,7 @@
 
         <param name="offset">
           <param name="kind" value="fixed" />
-          <!-- TODO: EXPOSE and posibly iter -->
+          <!-- TODO: EXPOSE and possibly iter -->
           <param name="value" value="0.0" />
         </param>
       </param>

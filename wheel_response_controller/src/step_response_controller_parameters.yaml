@@ -41,15 +41,14 @@ step_response_controller:
     step_command:
       type: double
       default_value: 1.0
-      description: "The final command value (from t_step untill +INF)"
+      description: "The final command value (from t_step until +INF)"
       validation:
         wheel_response_controller::is_real: null
 
     t_step:
       type: double
       default_value: 1.0
-      description: "The time after activation at which the step will occure"
+      description: "The time after activation at which the step will occur"
       validation:
         gt_eq<>: 0.0
         wheel_response_controller::is_real: null
-    

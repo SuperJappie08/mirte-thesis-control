@@ -135,7 +135,7 @@ class StatisticsCollector:
             self.__processed_names_until = 0
         elif not self.max_names_version < msg.names_version:
             logger.warning(
-                "Recieved new names for '%s', but the version has not increased. Skipping",
+                "Received new names for '%s', but the version has not increased. Skipping",
                 self.base_topic,
             )
             return
@@ -143,7 +143,7 @@ class StatisticsCollector:
         self.__max_names_verion = msg.names_version
         self.__names.append(msg)
         logger.debug(
-            "Recieved new names for '%s' with version %d",
+            "Received new names for '%s' with version %d",
             self.base_topic,
             self.max_names_version,
         )
@@ -152,13 +152,13 @@ class StatisticsCollector:
         if try_process:
             if self.names_versions is None:
                 logger.warning(
-                    "Recieved new values for '%s', while not having recieved the names yet.",
+                    "Received new values for '%s', while not having received the names yet.",
                     self.base_topic,
                 )
                 try_process = False
             elif msg.names_version not in self.names_versions:
                 logger.warning(
-                    "Recieved new values for '%s', with unknown names version."
+                    "Received new values for '%s', with unknown names version."
                     ' (%d not in [%d, %d])',
                     self.base_topic,
                     msg.names_version,
@@ -195,7 +195,7 @@ class StatisticsCollector:
             msg = self.__values[self.__processed_values_until]
             if msg.names_version not in self.names_versions:
                 logger.warning(
-                    'Skipping because of missing names version %d (recieved versions [%d, %d])',
+                    'Skipping because of missing names version %d (received versions [%d, %d])',
                     msg.names_version,
                     self.min_names_version,
                     self.max_names_version,
@@ -239,7 +239,7 @@ class StatisticsCollector:
         """
         if self.__processed_names_until is None:
             logger.error(
-                "Cannot update columns for '%s', since no names are recieved yet.",
+                "Cannot update columns for '%s', since no names are received yet.",
                 self.base_topic,
             )
             return False

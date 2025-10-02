@@ -143,7 +143,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     # Data settings
     data_folder: Path = cast(Path, parsed_args.folder).absolute()
 
-    assert data_folder.is_dir(), "The speficied 'FOLDER' must be a folder containing rosbags"
+    assert data_folder.is_dir(), "The specified 'FOLDER' must be a folder containing rosbags"
 
     datachecker = DataConsistencyChecker(
         excluded_keys=('recording_duration', 'recording_date', FREQUENCY_KEY),

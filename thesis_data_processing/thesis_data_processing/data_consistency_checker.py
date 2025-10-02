@@ -30,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 class DataConsistencyChecker(Container):
-    """A class to check if multiple data sources are consitent."""
+    """A class to check if multiple data sources are consistent."""
 
     def __init__(self, excluded_keys: Optional[Iterable[str]] = None) -> None:
         self._excluded_keys: set[str] = set(excluded_keys) if excluded_keys else set()

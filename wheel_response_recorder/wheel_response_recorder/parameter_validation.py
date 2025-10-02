@@ -19,7 +19,7 @@ import math
 def gt_or_nan(param, value):
     if math.isnan(param.value) or param.value > value:
         return ''
-    return "Parameter '%s' with the value %s must be NAN or greater than %s" % (
+    return "Parameter '{}' with the value {} must be NAN or greater than {}".format(
         param.name,
         param.value,
         value,

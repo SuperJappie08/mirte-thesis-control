@@ -203,7 +203,7 @@ def main(args=None):
                     prefix = f"{date[:10].replace('-', '')}-{prefix}"
 
                 # FIXME
-                filename = '%s-%s-sinusoid' % (
+                filename = '{}-{}-sinusoid'.format(
                     datetime.now().time().isoformat(timespec='seconds').replace(':', ''),
                     prefix,
                 )
@@ -243,7 +243,7 @@ def main(args=None):
 
                 if recording_duration > params.measurement_duration:
                     logger.warning(
-                        'Extended the measurement time to record atleast 2 cycles!'
+                        'Extended the measurement time to record at least 2 cycles!'
                         ' (Consider increasing the measurement time)',
                     )
 
