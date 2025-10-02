@@ -52,14 +52,20 @@ repos:
       - id: pyupgrade
         args: [--py36-plus]
 
-  # flake8
+  # ament_lint
   - repo: local
     hooks:
       - id: ament_flake8
         name: ament_flake8
         description: Check if all files adhere to ament_flake8.
         entry: ament_flake8
-        files: \.(py|pyi)$
+        types: [python]
+        language: system
+      - id: ament_pep257
+        name: ament_pep257
+        description: Check if all files adhere to ament_pep257.
+        entry: ament_pep257
+        types: [python]
         language: system
       - id: ament_xmllint
         name: ament_xmllint
@@ -67,10 +73,18 @@ repos:
         entry: ament_xmllint
         files: \.(xml|xacro|urdf|ros2_control)$
         language: system
-
-  # Copyright
-  - repo: local
-    hooks:
+      - id: ament_cppcheck
+        name: ament_cppcheck
+        description: Check if all files adhere to ament_cppcheck
+        entry: env AMENT_CPPCHECK_ALLOW_SLOW_VERSIONS=1 ament_cppcheck
+        types_or: [c, c++]
+        language: system
+      - id: ament_lint_cmake
+        name: ament_lint_cmake
+        description: Check if all files adhere to ament_lint_cmake
+        entry: ament_lint_cmake
+        types: [cmake]
+        language: system
       - id: ament_copyright
         name: ament_copyright
         description: Check if copyright notice is available in all files.
