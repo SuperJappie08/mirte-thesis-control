@@ -14,7 +14,6 @@
 
 #pragma once
 
-#include "wheel_response_controller/wheel_response_controller_parameters.hpp"
 #include <memory>
 
 // Generic ROS imports

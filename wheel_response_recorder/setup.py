@@ -25,6 +25,11 @@ config_files = [
     if Path(folder).is_dir()
 ] + [(f'share/{package_name}/config', glob('config/*.*'))]
 
+launch_files = [
+    (f'share/{package_name}/{folder}', glob(folder + '/*'))
+    for folder in glob('launch/*')
+    if Path(folder).is_dir()
+] + [(f'share/{package_name}/launch', glob('launch/*.launch.*'))]
 
 setup(
     name=package_name,
@@ -33,9 +38,8 @@ setup(
     data_files=[
         ('share/ament_index/resource_index/packages', ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
-        (f'share/{package_name}/launch', glob('launch/*')),
     ]
-    + config_files,
+    + config_files + launch_files,
     install_requires=['setuptools'],
     zip_safe=True,
     maintainer='Jasper van Brakel',

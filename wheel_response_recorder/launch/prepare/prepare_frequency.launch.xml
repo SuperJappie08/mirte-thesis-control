@@ -1,0 +1,8 @@
+<launch>
+  <include file="$(find-pkg-share wheel_response_recorder)/launch/prepare/deactivate_normal_controllers.launch.xml">
+    <arg name="control_setup" value="$(var control_setup)" />
+  </include>
+
+  <node pkg="controller_manager" exec="spawner"
+    args="multi_wheel_response_controller --inactive -p $(find-pkg-share wheel_response_recorder)/config/multi_wheel_response_controller.yaml" />
+</launch>

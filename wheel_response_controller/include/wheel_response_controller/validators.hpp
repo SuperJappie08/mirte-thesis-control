@@ -21,6 +21,7 @@
 #include <rclcpp/parameter.hpp>
 
 // Validator related
+// NOLINTNEXTLINE(build/include_order)
 #include <fmt/core.h>
 
 #include <tl_expected/expected.hpp>

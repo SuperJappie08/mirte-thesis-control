@@ -17,6 +17,9 @@
   <depend>python3-deprecated</depend>
 
   <exec_depend>wheel_response_controller</exec_depend>
+  <exec_depend>launch_xml</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
+  <exec_depend>launch_ros2_control</exec_depend>
 
   <test_depend>ament_copyright</test_depend>
   <test_depend>ament_flake8</test_depend>
