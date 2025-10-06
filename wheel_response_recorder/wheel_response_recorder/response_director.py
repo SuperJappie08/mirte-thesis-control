@@ -15,10 +15,10 @@
 
 from datetime import datetime
 import itertools
-from pathlib import Path
 import platform
 import threading
 import time
+from typing import TYPE_CHECKING
 
 from controller_manager.controller_manager_services import list_hardware_components
 from controller_manager_msgs.srv import ListHardwareComponents
@@ -26,8 +26,6 @@ from rcl_interfaces.msg import ParameterDescriptor
 from rcl_interfaces.msg import ParameterType
 import rclpy
 import rclpy.callback_groups
-from rclpy.logging import RcutilsLogger as Logger
-import rclpy.node
 import rclpy.parameter_client
 import rosbag2_py
 from tqdm.contrib.itertools import product as tqdm_product
@@ -35,38 +33,24 @@ from tqdm.contrib.itertools import product as tqdm_product
 from .controller_context import active_controller
 from .parameter_iterator import ParameterIterator
 from .response_director_parameters import response_director as response_director_parameters
+from .utils import setup_storage_location
+from .utils import wait_for_node
 
-
-def wait_for_node(
-    node: rclpy.node.Node,
-    logger: Logger,
-    other_node_name: str,
-    timeout: float = -1.0,
-) -> None:
-    other_node = (
-        other_node_name
-        if other_node_name.startswith('/')
-        else node.get_namespace().lstrip('/') + '/' + other_node_name
-    )
-    logger.info(f"Waiting for node '{other_node}'")
-    if not node.wait_for_node(other_node, timeout=timeout):
-        raise TimeoutError(
-            f"Timed out waiting for node '{other_node}' after {timeout} seconds",
-        )
-
+if TYPE_CHECKING:
+    from rclpy.logging import RcutilsLogger as Logger
 
 SRV_POSTFIX: str = '/_service_event'
 
 
 def main(args=None):
     rclpy.init(args=args, signal_handler_options=rclpy.SignalHandlerOptions.NO)
-    # rclpy.executors.MultiThreadedExecutor()
+
     with rclpy.get_global_executor() as exc:
         recorder = None
         record_thread = None
         try:
             node = rclpy.create_node('response_director')
-            logger: Logger = node.get_logger()
+            logger: 'Logger' = node.get_logger()
             exc.add_node(node)
 
             node.declare_parameter(
@@ -103,24 +87,12 @@ def main(args=None):
 
             product = tqdm_product if params.progressbar else itertools.product
 
-            offset = ParameterIterator('offset', params.sinusoid)
-            amplitude = ParameterIterator('amplitude', params.sinusoid)
-            frequency = ParameterIterator('frequency', params.sinusoid)
-            phase = ParameterIterator('phase', params.sinusoid)
+            parameter_iterators = sorted(
+                (ParameterIterator(argument, params.signal) for argument in params.arguments),
+                key=lambda iterator: iterator.name,
+            )
 
-            storage_location = Path(params.storage_location).expanduser().absolute()
-
-            if storage_location.exists() and not storage_location.is_dir():
-                logger.fatal(
-                    f"The storage path '{storage_location}' exists, but is not a folder!",
-                )
-                raise FileExistsError(
-                    f"The storage path '{storage_location}' exists, but is not a folder!",
-                )
-
-            if not storage_location.exists():
-                logger.info(f'Creating folder {storage_location}')
-                storage_location.mkdir(parents=True, exist_ok=True)
+            storage_location = setup_storage_location(logger, params.storage_location)
 
             custom_data = {'host': platform.node()}
             for key, value in platform.uname()._asdict().items():
@@ -166,12 +138,14 @@ def main(args=None):
             logger.info(f"Waiting for {params.controller_name}'s parameter services")
             param_client.wait_for_services()
 
+            param_prefix = params.parameter_prefix
+
             recorder = rosbag2_py.Recorder()
             record_thread = None
-            for new_params in product(offset, amplitude, frequency, phase):
+            for new_params in product(*parameter_iterators):
                 param_future = param_client.set_parameters(
                     [
-                        rclpy.Parameter(name=f'sinusoid.{name}', value=value)
+                        rclpy.Parameter(name=f'{param_prefix}.{name}', value=value)
                         for name, value in new_params
                     ],
                 )
@@ -203,24 +177,33 @@ def main(args=None):
                     prefix = f"{date[:10].replace('-', '')}-{prefix}"
 
                 # FIXME
-                filename = '{}-{}-sinusoid'.format(
+                filename = '{}-{}-{}'.format(
                     datetime.now().time().isoformat(timespec='seconds').replace(':', ''),
                     prefix,
+                    param_prefix,
                 )
 
                 for name, value in new_params:
                     filename += f'-{name}-{value:03.02E}'.replace('.', '_')
 
                 for name, value in new_params:
-                    custom_data[f'sinusoid.{name}'] = str(value)
+                    custom_data[f'{param_prefix}.{name}'] = str(value)
 
                 custom_data['recording_date'] = datetime.now().isoformat(
                     timespec='seconds',
                 )
 
-                recording_duration = max(
-                    params.measurement_duration,
-                    2 / dict(new_params)['frequency'],
+                # recording_duration = max(
+                #     params.measurement_duration,
+                #     2 / dict(new_params)['frequency'],
+                # )
+                measurement_duration_locals = {
+                    'measurement_duration': params.measurement_duration,
+                }
+                measurement_duration_locals.update(new_params)
+                recording_duration = eval(
+                    params.measurement_duration_modifier,
+                    measurement_duration_locals,
                 )
                 custom_data['recording_duration'] = str(recording_duration)
 
@@ -241,10 +224,13 @@ def main(args=None):
                 )
                 record_thread.start()
 
-                if recording_duration > params.measurement_duration:
+                if recording_duration != params.measurement_duration:
                     logger.warning(
-                        'Extended the measurement time to record at least 2 cycles!'
-                        ' (Consider increasing the measurement time)',
+                        'The measurement duration was modified by the modifier'
+                        ' (Consider increasing the measurement time)\n'
+                        f" [Original: '{params.measurement_duration}',"
+                        f" modified by '{params.measurement_duration_modifier}',"
+                        f" resulting: '{recording_duration}']",
                     )
 
                 with active_controller(node, params.controller_name, controller_manager):

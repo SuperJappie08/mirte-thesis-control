@@ -1,6 +1,8 @@
 response_director:
   ros__parameters:
-    sinusoid:
+    parameter_prefix: sinusoid
+    arguments: [amplitude, frequency, phase, offset]
+    signal:
       amplitude:
         kind: fixed
         value: 2.5

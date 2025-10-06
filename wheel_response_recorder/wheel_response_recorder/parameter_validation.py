@@ -14,6 +14,10 @@
 # limitations under the License.
 
 import math
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rclpy.parameter import Parameter
 
 
 def gt_or_nan(param, value):
@@ -24,3 +28,24 @@ def gt_or_nan(param, value):
         param.value,
         value,
     )
+
+
+def single_nan_or_normals(param: 'Parameter'):
+    if len(param.value) == 0:
+        return (
+            f"Parameter '{param.name}' must be a non-empty array."
+            ' (Either a single NAN or multiple normal values (not NAN or INF))'
+        )
+    elif len(param.value) == 1 and not (
+        math.isnan(param.value[0]) or math.isfinite(param.value[0])
+    ):
+        return (
+            f"Parameter '{param.name}' must be an array of a single NAN value or real values"
+            ' (not NAN or INF)'
+        )
+    elif len(param.value) > 1 and any(not math.isfinite(value) for value in param.value):
+        return (
+            f"Parameter '{param.name}' must be an array or real values (not NAN or INF)."
+            ' (or a single NAN)'
+        )
+    return ''

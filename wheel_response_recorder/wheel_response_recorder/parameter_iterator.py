@@ -13,14 +13,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from collections.abc import Callable, Iterable, Iterator, Sized
+from collections.abc import Callable, Collection, Iterable, Iterator, Sized
 from dataclasses import dataclass
 from dataclasses import field
 from dataclasses import InitVar
 from functools import partial
 from itertools import repeat
 import math
-from typing import Any, Optional
+from typing import Any, final, Optional
 
 import numpy as np
 
@@ -34,6 +34,7 @@ class ParamIter(Iterable[float], Sized):
         assert self.KEY == subparams.kind
 
 
+@final
 class FixedParamIter(ParamIter):
     KEY = 'fixed'
 
@@ -52,12 +53,40 @@ class FixedParamIter(ParamIter):
         return 1
 
 
-class RangeParamIter(ParamIter):
+class CollectionParamIter(ParamIter):
+
+    def __init__(self, subparams, collection: Collection) -> None:
+        super().__init__(subparams)
+        assert isinstance(collection, Collection)
+        assert not any(math.isnan(value) for value in collection)
+        self._collection = collection
+
+    @final
+    def __iter__(self) -> Iterator[float]:
+        return iter(self._collection)
+
+    @final
+    def __len__(self) -> int:
+        return len(self._collection)
+
+
+@final
+class ListParamIter(CollectionParamIter):
+    KEY = 'list'
+
+    def __init__(self, subparams) -> None:
+        assert hasattr(subparams, 'values')
+        assert isinstance(subparams.values, Collection)
+        values = subparams.values
+        assert len(values) > 0
+
+        super().__init__(subparams, values)
+
+
+class RangeParamIter(CollectionParamIter):
     DIST: Optional[Callable[[float, float, int], Any]] = None
 
     def __init__(self, subparams) -> None:
-        super().__init__(subparams)
-
         if self.DIST is None:
             raise ValueError('Need to override DIST on RangeParamIter types')
 
@@ -79,20 +108,17 @@ class RangeParamIter(ParamIter):
         )
         num_steps = subparams.num_steps
 
-        self._list = self.DIST(start, stop, num_steps)
-
-    def __iter__(self) -> Iterator[float]:
-        return iter(self._list)
-
-    def __len__(self) -> int:
-        return len(self._list)
+        values = self.DIST(start, stop, num_steps)
+        super().__init__(subparams, values)
 
 
+@final
 class LinearParamIter(RangeParamIter):
     KEY = 'linear'
     DIST = partial(np.linspace, endpoint=True, dtype=float)
 
 
+@final
 class LogParamIter(RangeParamIter):
     KEY = 'log'
     DIST = partial(np.logspace, endpoint=True, dtype=float)
@@ -106,6 +132,7 @@ class LogParamIter(RangeParamIter):
 
 PARAMITER_RESOLVE = {
     FixedParamIter.KEY: FixedParamIter,
+    ListParamIter.KEY: ListParamIter,
     LinearParamIter.KEY: LinearParamIter,
     LogParamIter.KEY: LogParamIter,
 }

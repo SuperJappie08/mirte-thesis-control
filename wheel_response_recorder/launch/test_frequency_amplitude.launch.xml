@@ -28,7 +28,7 @@
       <param name="recorded_topics" type="list_of_str" value="" value-sep=","/>
       <param name="wait_for_telemetrix" type="bool" value="False" />
 
-      <param name="sinusoid">
+      <param name="signal">
         <param name="amplitude">
           <param name="kind" value="linear" />
           <param name="start" value="2.0" />

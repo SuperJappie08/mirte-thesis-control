@@ -22,6 +22,14 @@ response_director:
     validation:
       gt<>: 0.0
 
+  # This is going to be an unsafe use of eval, but doing this differently would be difficult
+  measurement_duration_modifier:
+    type: string
+    default_value: "max(measurement_duration, 2 / frequency)"
+    description: A Python expression which should return the measurement duration. If only using measurement duration use 'measurement_duration'
+    validation:
+      not_empty<>: null
+
   node_timeout:
     type: double
     default_value: .INF
@@ -62,22 +70,28 @@ response_director:
     description: "Extra notes about the measurement"
     read_only: true
 
+  parameter_prefix:
+    type: string
+    default_value: "sinusoid"
+    description: "The parameter prefix for the iterated parameters."
+    read_only: true
+
   arguments:
     type: string_array
     default_value: ["offset", "amplitude", "frequency", "phase"]
-    description: "The available sinusoid parameters"
+    description: "The available signal producer parameters (configured under signal.{arguments}.*)"
     read_only: true
     validation:
       unique<>: null
-      fixed_size<>: 4
-  sinusoid:
+      not_empty<>: null
+  signal:
     __map_arguments:
       kind:
         type: string
         read_only: true
         validation:
           not_empty<>: null
-          one_of<>: [["fixed", "linear", "log"]]
+          one_of<>: [["fixed", "linear", "log", "list"]]
       value:
         type: double
         default_value: .NAN
@@ -108,6 +122,13 @@ response_director:
         description: "The base of the exponent when kind is 'log'"
         validation:
           gt<>: 0.0
+      values:
+        type: double_array
+        default_value: [.NAN]
+        description: "List of values to iterate over when the kind is 'list'"
+        read_only: true
+        validation:
+          "custom_validators::single_nan_or_normals": null
 
   # amplitude:
   #   kind:

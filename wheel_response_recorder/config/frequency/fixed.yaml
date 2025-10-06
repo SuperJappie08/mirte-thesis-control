@@ -1,5 +1,5 @@
 response_director:
   ros__parameters:
-    sinusoid:
+    signal:
       frequency:
         kind: "fixed"
