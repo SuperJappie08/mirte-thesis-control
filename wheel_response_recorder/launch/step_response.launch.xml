@@ -2,7 +2,7 @@
 <launch>
   <arg name="audit-progress" default="False" />
 
-  <arg name="controller_name" default="multi_wheel_response_controller" />
+  <arg name="controller_name" default="multi_wheel_step_controller" />
 
   <include file="$(find-pkg-share wheel_response_recorder)/launch/arguments/hw_interface.launch.xml">
     <arg name="hw_interface" value="$(var hw_interface)" />
@@ -11,23 +11,17 @@
   <arg name="measurement_postfix" default=""
     description="A post fix, which will be put between the measurement type and the date" />
 
-  <arg name="sinusoid_param_file" default="prelim_frequency_offset.yaml"
-    description="The frequency response parameter iteration configuration file (located in config/measurement)">
-    <choice value="prelim_frequency_offset.yaml" />
-    <choice value="prelim_frequency_zero.yaml" />
-  </arg>
-  <arg name="sinusoid_param_fullpath"
-    default="$(find-pkg-share wheel_response_recorder)/config/measurement/$(var sinusoid_param_file)"
-    description="The sinusoid parameter iteration configuration file (full path)" />
+  <arg name="step_param_file" default="step_response.yaml"
+    description="The step response parameter iteration configuration file (located in config/measurement)" />
+  <arg name="step_param_fullpath"
+    default="$(find-pkg-share wheel_response_recorder)/config/measurement/$(var step_param_file)"
+    description="The step iteration configuration file (full path)" />
 
   <arg name="measurements_folder" default="~/thesis/measurements" />
 
   <arg name="measurement_duration" default="5.0" />
 
   <arg name="extra_notes" default="" description="Extra notes to store with the measurements" />
-
-  <let name="measurement_kind" value="offset" if="$(equals $(var sinusoid_param_file) 'prelim_frequency_offset.yaml')"/>
-  <let name="measurement_kind" value="zero" if="$(equals $(var sinusoid_param_file) 'prelim_frequency_zero.yaml')"/>
 
   <group forwarding="False">
     <keep name="audit-progress" value="$(var audit-progress)" />
@@ -36,11 +30,10 @@
     <keep name="hw_interface" value="$(var hw_interface)" />
     <keep name="measurement_postfix" value="$(var measurement_postfix)" />
 
-    <keep name="sinusoid_param_fullpath" value="$(var sinusoid_param_fullpath)" />
+    <keep name="step_param_fullpath" value="$(var step_param_fullpath)" />
 
     <keep name="measurements_folder" value="$(var measurements_folder)" />
     <keep name="measurement_duration" value="$(var measurement_duration)" />
-    <keep name="measurement_kind" value="$(var measurement_kind)" />
 
     <keep name="extra_notes" value="$(var extra_notes)" />
 
@@ -49,11 +42,11 @@
       <arg name="controller_name" value="$(var controller_name)" />
 
       <!-- Measurement type -->
-      <arg name="measurement_type" value="prelim-freq-$(var measurement_kind)" />
+      <arg name="measurement_type" value="step" />
       <arg name="enable_hw_type_id" value="True" />
       <arg name="hw_type_postfix" value="$(var measurement_postfix)" />
 
-      <arg name="parameter_filepath" value="$(var sinusoid_param_fullpath)" />
+      <arg name="parameter_filepath" value="$(var step_param_fullpath)" />
 
       <arg name="measurements_folder" value="$(var measurements_folder)" />
 

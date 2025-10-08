@@ -1,0 +1,8 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<launch>
+  <arg name="hw_interface" description="The hardware interface type being used">
+    <choice value="service_based" />
+    <choice value="multimotor_topic_based" />
+    <choice value="singlemotor_topic_based" />
+  </arg>
+</launch>

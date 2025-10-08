@@ -1,4 +1,5 @@
 <?xml version="1.1" encoding="UTF-8"?>
+<!-- NOTE(SuperJappie08): Currently not used yet -->
 <launch>
   <arg name="audit-progress" default="False" />
 
@@ -11,11 +12,15 @@
   <arg name="measurement_postfix" default=""
     description="A post fix, which will be put between the measurement type and the date" />
 
-  <arg name="sinusoid_param_file" default="prelim_frequency_offset.yaml"
-    description="The frequency response parameter iteration configuration file (located in config/measurement)">
-    <choice value="prelim_frequency_offset.yaml" />
-    <choice value="prelim_frequency_zero.yaml" />
-  </arg>
+  <!-- FIXME: Add correct parameter file options -->
+  <arg name="sinusoid_param_file" default="frequency_offset.yaml"
+    description="The frequency response parameter iteration configuration file (located in config/measurement)" />
+
+  <let name="ansi-escape" value="$(eval 'chr(0o33)')" />
+  <let name="todo-block" value="$(var ansi-escape)[1;93m[TODO]$(var ansi-escape)[0m"/>
+  <log message="$(var todo-block) This measurement configuration is incomplete"/>
+  <shutdown/>
+
   <arg name="sinusoid_param_fullpath"
     default="$(find-pkg-share wheel_response_recorder)/config/measurement/$(var sinusoid_param_file)"
     description="The sinusoid parameter iteration configuration file (full path)" />
@@ -25,9 +30,6 @@
   <arg name="measurement_duration" default="5.0" />
 
   <arg name="extra_notes" default="" description="Extra notes to store with the measurements" />
-
-  <let name="measurement_kind" value="offset" if="$(equals $(var sinusoid_param_file) 'prelim_frequency_offset.yaml')"/>
-  <let name="measurement_kind" value="zero" if="$(equals $(var sinusoid_param_file) 'prelim_frequency_zero.yaml')"/>
 
   <group forwarding="False">
     <keep name="audit-progress" value="$(var audit-progress)" />
@@ -40,7 +42,6 @@
 
     <keep name="measurements_folder" value="$(var measurements_folder)" />
     <keep name="measurement_duration" value="$(var measurement_duration)" />
-    <keep name="measurement_kind" value="$(var measurement_kind)" />
 
     <keep name="extra_notes" value="$(var extra_notes)" />
 
@@ -49,7 +50,7 @@
       <arg name="controller_name" value="$(var controller_name)" />
 
       <!-- Measurement type -->
-      <arg name="measurement_type" value="prelim-freq-$(var measurement_kind)" />
+      <arg name="measurement_type" value="freq" />
       <arg name="enable_hw_type_id" value="True" />
       <arg name="hw_type_postfix" value="$(var measurement_postfix)" />
 

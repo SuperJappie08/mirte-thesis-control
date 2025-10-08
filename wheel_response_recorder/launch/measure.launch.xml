@@ -1,0 +1,70 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<launch>
+  <arg name="audit-progress" default="False" />
+
+  <arg name="controller_name" />
+
+  <include file="$(find-pkg-share wheel_response_recorder)/launch/arguments/hw_interface.launch.xml">
+    <arg name="hw_interface" value="$(var hw_interface)" />
+  </include>
+
+  <arg name="enable_hw_type_id" default="True" description="Enables HW type ID in measurement name"/>
+
+  <!-- hardware name segment -->
+  <let name="hw_type_id" value="srv" if="$(equals $(var hw_interface) 'service_based')"/>
+  <let name="hw_type_id" value="mmt" if="$(equals $(var hw_interface) 'multimotor_topic_based')"/>
+  <let name="hw_type_id" value="smt" if="$(equals $(var hw_interface) 'singlemotor_topic_based')"/>
+
+  <let name="hw_interface_specific_params_file"
+    value="$(find-pkg-share wheel_response_recorder)/config/$(var hw_interface).yaml" />
+
+  <!-- Configure measurement type and name -->
+
+  <let name="hw_type_id_name" value="$(if $(var enable_hw_type_id) $(var hw_type_id '') '')" />
+  <let name="hw_type_id_name" value="$(if $(eval 'len(\'$(var hw_type_id_name)\') > 0') '-$(var hw_type_id_name)' '')" />
+
+  <arg name="hw_type_postfix" default="" />
+  <let name="hw_type_id_name" value="$(var hw_type_id_name)-$(var hw_type_postfix)" if="$(eval 'len(\'$(var hw_type_postfix)\') > 0')"/>
+
+  <arg name="measurement_type" />
+  <arg name="measurement_name"
+    default="$(var measurement_type)$(var hw_type_id_name)-$(eval 'datetime.datetime.now().isoformat(timespec=\'minutes\').replace(\':\', \'\')' datetime)" />
+  <log message="Starting measurement '$(var measurement_name)'" />
+
+  <!-- Prepare parameters -->
+  <arg name="parameter_filepath"
+    description="The measurement parameter iteration configuration file (full path)" />
+
+  <log message="Using parameters '$(var parameter_filepath)'" />
+
+  <!-- Configure measurement folder location -->
+  <arg name="measurements_folder" default="~/thesis/measurements" />
+  <let name="storage_location"
+    value="$(eval '\'$(var measurements_folder)\'.rstrip(\'/\')')/$(var measurement_name)" />
+  <log message="Saving the measurements to $(var storage_location)" />
+
+  <!-- HAD default 5 -->
+  <arg name="measurement_duration" />
+
+  <arg name="extra_notes" default="" description="Extra notes to store with the measurements" />
+
+  <group>
+    <let name="launch-prefix" value="xterm -geometry 160x2 -e" if="$(var audit-progress)" />
+
+    <node pkg="wheel_response_recorder" exec="response_director" on_exit="shutdown" output="screen"
+      emulate_tty="true">
+      <param name="progressbar" value="$(var audit-progress)" />
+      <param name="storage_location" value="$(var storage_location)" />
+
+      <param name="controller_name" value="$(var controller_name)" />
+
+      <param from="$(var hw_interface_specific_params_file)" />
+
+      <param name="measurement_duration" value="$(var measurement_duration)" />
+
+      <param name="extra_notes" value="$(var extra_notes)" />
+
+      <param from="$(var parameter_filepath)" />
+    </node>
+  </group>
+</launch>

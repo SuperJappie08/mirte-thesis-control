@@ -128,6 +128,7 @@ def main(args=None):
                 for service in params.recorded_services if service
             ]
             recorder_options.disable_keyboard_controls = True
+            recorder_options.start_paused = True
 
             param_callback_group = rclpy.callback_groups.MutuallyExclusiveCallbackGroup()
             param_client = rclpy.parameter_client.AsyncParameterClient(
@@ -223,6 +224,10 @@ def main(args=None):
                     daemon=True,
                 )
                 record_thread.start()
+                # NOTE: Need to wait at least 1.5 seconds for rosbag recorder to discover
+                #       all topics. Otherwise the the initial seconds will not be recorded!
+                time.sleep(2)
+                recorder.resume()
 
                 if recording_duration != params.measurement_duration:
                     logger.warning(
@@ -242,6 +247,7 @@ def main(args=None):
 
                     exc.spin_until_future_complete(task)
                     assert task.done()
+                    recorder.pause()
 
                 recorder.cancel()
                 logger.info('Stopped Recording')
