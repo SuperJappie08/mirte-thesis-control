@@ -68,6 +68,13 @@ OFFSET_KEY = 'sinusoid.offset'
 PHASE_OFFSET_KEY = 'sinusoid.phase'
 
 
+def positive_int(value: str) -> int:
+    n = int(value)
+    if n <= 0:
+        raise argparse.ArgumentTypeError(f'{n} is not a positive integer. Must be larger than 0')
+    return n
+
+
 def main(args: Optional[Sequence[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
@@ -81,6 +88,10 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         '-N', '--filter-normal',
         action='store_true', required=False,
         help='Remove NAN and INF from data')
+    parser.add_argument(
+        '-S', '--skip-samples',
+        type=positive_int, required=False,
+        help='Amount of samples to skip at the beginning and end. Can be omitted to use all data')
 
     plot_frequency_group = parser.add_argument_group('Frequency plot configuration')
     plot_frequency_select_group = plot_frequency_group.add_mutually_exclusive_group()
@@ -122,6 +133,11 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     filter_data = parsed_args.filter_normal
     if not filter_data:
         logger.warning('The data is NOT filtered for NAN and INF [LEGACY] Might not work')
+
+    datarange_selector = slice(
+        parsed_args.skip_samples,
+        -parsed_args.skip_samples if isinstance(parsed_args.skip_samples, int) else None,
+    )
 
     # Frequency plot options
     plot_all_frequencies = parsed_args.plot_all_frequencies
@@ -273,8 +289,8 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 print(initial_phase, max_phase, min_phase, max_phase-min_phase)
 
                 # Filter out nans
-                xdata_valid = np.isfinite(xdata[5:-5])
-                ydata_valid = np.isfinite(ydata[5:-5])
+                xdata_valid = np.isfinite(xdata[datarange_selector])
+                ydata_valid = np.isfinite(ydata[datarange_selector])
                 valid_data_mask = xdata_valid & ydata_valid
 
                 if not filter_data:
@@ -284,13 +300,13 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 f = lambda x, gain, phase: (  # noqa: E731
                     # TODO(SuperJappie08): 20250916 Is phase shift location correct???
                     gain * amplitude * np.sin(
-                                          frequency * (2.0 * np.pi * x - phase) + phase_offset
+                                          frequency * 2.0 * np.pi * x + phase + phase_offset
                                       ) + offset
                 )
                 (gain_scale, phase), _ = curve_fit(
                     f,
-                    xdata[5:-5][valid_data_mask],
-                    ydata[5:-5][valid_data_mask],
+                    xdata[datarange_selector][valid_data_mask],
+                    ydata[datarange_selector][valid_data_mask],
                     np.array([1.0, initial_phase]),
                     bounds=([0.0, min_phase], [np.inf, max_phase]),
                     # bounds=( # TODO: This could work if dynamically adjust the lower bound
@@ -310,21 +326,30 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                         freq_plot_extra_fmt['marker'] = '.'
 
                     plt.figure()
-                    plt.title(f'{wheel_name} @ f = {frequency}Hz')
+                    plt.suptitle(f'{wheel_name} @ f = {frequency}Hz')
+                    plt.title(f'phase delay = {phase:.03}rad/s, gain = {gain_scale:.03}')
                     plt.plot(
-                        xdata[5:-5],
+                        xdata[datarange_selector],
                         bag_df[f'command_interface.{wheel_name}/velocity'].to_numpy(
                             dtype=np.float64,
-                        )[5:-5],
+                        )[datarange_selector],
                         label='command',
                         **freq_plot_extra_fmt)
-                    plt.plot(xdata[5:-5], ydata[5:-5], label='measurement', **freq_plot_extra_fmt)
                     plt.plot(
-                        xdata[5:-5],
-                        f(xdata[5:-5], gain_scale, phase),
+                        xdata[datarange_selector],
+                        ydata[datarange_selector],
+                        label='measurement',
+                        **freq_plot_extra_fmt)
+                    plt.plot(
+                        xdata[datarange_selector],
+                        f(xdata[datarange_selector], gain_scale, phase),
                         label='fit',
                         **freq_plot_extra_fmt)
-                    plt.xticks(xdata[5:-5:100])
+                    plt.xticks(xdata[slice(
+                        datarange_selector.start,
+                        datarange_selector.stop,
+                        100,
+                    )])
                     plt.xlabel('Time (s)')
                     plt.ylabel('speed (rad/s)')
                     plt.legend()
