@@ -31,6 +31,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 if TYPE_CHECKING:
     from types import ModuleType
 
+    from builtin_interfaces.msg import Time as MsgTime
     from controller_manager_msgs.msg import ControllerManagerActivity
     from controller_manager_msgs.msg import NamedLifecycleState
     from rosbag2_py import BagMetadata
@@ -58,6 +59,7 @@ from . import DataConsistencyChecker
 from . import open_rosbag
 from . import read_messages
 from . import StatisticsCollector
+from . import utils
 from .conversions import gain2dB
 
 logger = logging.getLogger(__name__)
@@ -170,6 +172,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             '/controller_manager/introspection_data/names',
             '/controller_manager/introspection_data/values',
             '/controller_manager/activity',
+            '/rosout',
         ],
         regex_to_exclude='.*/_service_event',
     )
@@ -220,9 +223,13 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 only_names=names_to_keep,
             )
 
+            start_activity_time: 'Optional[MsgTime]' = None
             accepting_data: bool = False
             for topic, msg, recv_time in read_messages(reader, storage_filter):
-                # tqdm( ,total=total_msg_count, position=1, desc='Messages'):
+                if topic == '/rosout' and msg.name == 'controller_manager' and \
+                        msg.msg == f'Activating controllers: [ {controller_name} ]':
+                    start_activity_time = msg.stamp
+
                 if topic.endswith('/activity'):
                     controller_status: 'NamedLifecycleState' = next(
                         filter(
@@ -244,8 +251,9 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 ):
                     statistics_collector.process_msg(topic, msg, try_process=False)
 
+            assert start_activity_time is not None
             bag_df = statistics_collector.data.copy(True)
-            bag_df.index = bag_df.index - bag_df.index.min()
+            bag_df.index = bag_df.index - utils.as_time(start_activity_time)
 
             xdata = bag_df.index.to_numpy(dtype=np.float64)
             bode_df.loc[frequency] = {

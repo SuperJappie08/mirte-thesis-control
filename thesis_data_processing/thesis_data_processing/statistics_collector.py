@@ -11,7 +11,6 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-from decimal import Decimal
 from typing import assert_type, Optional, TYPE_CHECKING
 
 import pandas as pd
@@ -31,6 +30,8 @@ try:
     logging = colorlog
 except ImportError:
     import logging
+
+from . import utils
 
 logger = logging.getLogger(__name__)
 
@@ -207,7 +208,7 @@ class StatisticsCollector:
                     if not self._update_dataframe_headers():
                         return False
 
-            msg_time = Decimal(f'{msg.header.stamp.sec}.{msg.header.stamp.nanosec:0>9}')
+            msg_time = utils.as_time(msg.header.stamp)
             new_data = {name: float('nan') for name in self.__data.columns}
             new_data |= dict(
                 filter(

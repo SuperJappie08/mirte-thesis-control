@@ -12,18 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from . import conversions
-from . import utils
-from .data_consistency_checker import DataConsistencyChecker
-from .rosbag_reader_utils import open_rosbag
-from .rosbag_reader_utils import read_messages
-from .statistics_collector import StatisticsCollector
+from decimal import Decimal
+from typing import TYPE_CHECKING
 
-__all__ = [
-    'DataConsistencyChecker',
-    'StatisticsCollector',
-    'conversions',
-    'open_rosbag',
-    'read_messages',
-    'utils',
-]
+if TYPE_CHECKING:
+    from builtin_interfaces.msg import Time
+
+
+def as_time(stamp: 'Time') -> Decimal:
+    return Decimal(f'{stamp.sec}.{stamp.nanosec:0>9}')
