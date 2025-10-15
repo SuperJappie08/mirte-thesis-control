@@ -14,6 +14,8 @@
 
 from unittest.mock import NonCallableMock
 
+import numpy as np
+
 from wheel_response_recorder.parameter_iterator import FixedParamIter
 from wheel_response_recorder.parameter_iterator import LinearParamIter
 from wheel_response_recorder.parameter_iterator import ListParamIter
@@ -26,7 +28,7 @@ def test_fixed_param_iter():
     iterator = FixedParamIter(subparams)
     assert iterator.KEY == 'fixed'
     assert len(iterator) == 1
-    assert list(iter(iterator)) == [3.14]
+    assert np.all(np.isclose(np.fromiter(iter(iterator), dtype=float), [3.14]))
 
 
 def test_list_param_iter():
@@ -35,7 +37,7 @@ def test_list_param_iter():
     iterator = ListParamIter(subparams)
     assert iterator.KEY == 'list'
     assert len(iterator) == 4
-    assert list(iter(iterator)) == [0.0, 3.0, 4.0, 3.21]
+    assert np.all(np.isclose(np.fromiter(iter(iterator), dtype=float), [0.0, 3.0, 4.0, 3.21]))
 
 
 def test_linear_param_iter():
@@ -44,7 +46,8 @@ def test_linear_param_iter():
     iterator = LinearParamIter(subparams)
     assert iterator.KEY == 'linear'
     assert len(iterator) == 7
-    assert list(iter(iterator)) == [-1, -0.5, 0, 0.5, 1.0, 1.5, 2.0]
+    assert np.all(np.isclose(np.fromiter(iter(iterator), dtype=float),
+                             [-1, -0.5, 0, 0.5, 1.0, 1.5, 2.0]))
 
 
 def test_log_param_iter():
@@ -53,4 +56,4 @@ def test_log_param_iter():
     iterator = LogParamIter(subparams)
     assert iterator.KEY == 'log'
     assert len(iterator) == 4
-    assert list(iter(iterator)) == [0.1, 1.0, 10, 100]
+    assert np.all(np.isclose(np.fromiter(iter(iterator), dtype=float), [0.1, 1.0, 10, 100]))
