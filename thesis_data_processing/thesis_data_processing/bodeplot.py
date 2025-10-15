@@ -45,16 +45,6 @@ try:
 except ImportError:
     import logging
 
-# LIFECYCLE_ACTIVE_ID is hard-coded, but if the messages are available, it will be verified.
-try:
-    LIFECYCLE_ACTIVE_ID: int = 3
-    from lifecycle_msgs.msg import State
-
-    assert LIFECYCLE_ACTIVE_ID == State.PRIMARY_STATE_ACTIVE
-except ImportError:
-    pass
-
-
 from . import DataConsistencyChecker
 from . import open_rosbag
 from . import read_messages
@@ -193,175 +183,177 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     bode_df.index.name = 'frequency'
 
     previous_frequency: Optional[float] = None
-    for rosbag_path in tqdm(sorted(data_folder.glob('*')), desc='Bags'):
-        logger.info("Processing '%s'", str(rosbag_path.stem))
-        with (
-            open_rosbag(StorageOptions(uri=str(rosbag_path))) as reader,
-            logging_redirect_tqdm(tqdm_class=tqdm),
-        ):
-            metadata: 'BagMetadata' = reader.get_metadata()
+    with logging_redirect_tqdm(tqdm_class=tqdm):
+        for rosbag_path in tqdm(sorted(data_folder.glob('*')), desc='Bags'):
+            logger.info("Processing '%s'", str(rosbag_path.stem))
+            with open_rosbag(StorageOptions(uri=str(rosbag_path))) as reader:
+                metadata: 'BagMetadata' = reader.get_metadata()
 
-            custom_metadata = deepcopy(metadata.custom_data)
-            custom_metadata['ros_distro'] = metadata.ros_distro
+                custom_metadata = deepcopy(metadata.custom_data)
+                custom_metadata['ros_distro'] = metadata.ros_distro
 
-            assert datachecker.check(custom_metadata), f"Bag '{rosbag_path.stem}' is inconsistent!"
+                assert datachecker.check(custom_metadata), \
+                    f"Bag '{rosbag_path.stem}' is inconsistent!"
 
-            frequency = float(custom_metadata[FREQUENCY_KEY])
-            amplitude = float(custom_metadata[AMPLITUDE_KEY])
-            phase_offset = float(custom_metadata[PHASE_OFFSET_KEY])
-            offset = float(custom_metadata[OFFSET_KEY])
+                frequency = float(custom_metadata[FREQUENCY_KEY])
+                amplitude = float(custom_metadata[AMPLITUDE_KEY])
+                phase_offset = float(custom_metadata[PHASE_OFFSET_KEY])
+                offset = float(custom_metadata[OFFSET_KEY])
 
-            # NOTE: There is a default as fallback, since first preliminary recording did not store
-            #       this data.
-            controller_name = custom_metadata.get(
-                'controller_name',
-                'multi_wheel_response_controller',
-            )
-
-            statistics_collector = StatisticsCollector(
-                '/controller_manager/introspection_data',
-                only_names=names_to_keep,
-            )
-
-            start_activity_time: 'Optional[MsgTime]' = None
-            accepting_data: bool = False
-            for topic, msg, recv_time in read_messages(reader, storage_filter):
-                if topic == '/rosout' and msg.name == 'controller_manager' and \
-                        msg.msg == f'Activating controllers: [ {controller_name} ]':
-                    start_activity_time = msg.stamp
-
-                if topic.endswith('/activity'):
-                    controller_status: 'NamedLifecycleState' = next(
-                        filter(
-                            lambda controller: controller.name == controller_name,
-                            cast('ControllerManagerActivity', msg).controllers,
-                        ),
-                    )
-
-                    # TODO: Maybe do this the time stamps instead to prevent different ordering
-                    accepting_data = controller_status.state.id == LIFECYCLE_ACTIVE_ID
-                    logger.info(
-                        "%s recording data on '%s'",
-                        'Started' if accepting_data else 'Stopped',
-                        statistics_collector.base_topic,
-                    )
-
-                if topic.startswith(statistics_collector.base_topic) and (
-                    accepting_data or topic.endswith('/names')
-                ):
-                    statistics_collector.process_msg(topic, msg, try_process=False)
-
-            assert start_activity_time is not None
-            bag_df = statistics_collector.data.copy(True)
-            bag_df.index = bag_df.index - utils.as_time(start_activity_time)
-
-            xdata = bag_df.index.to_numpy(dtype=np.float64)
-            bode_df.loc[frequency] = {
-                wheel_name: dict.fromkeys(('gain', 'phase'), np.nan) for wheel_name in wheel_names
-            }
-
-            do_plot = plot_frequencies is not None and (
-                any(np.isclose(frequency, plot_frequencies)) or
-                previous_frequency is not None and bool(remaining_plot_frequencies) and
-                previous_frequency < frequency and frequency >= remaining_plot_frequencies[0])
-
-            if do_plot:
-                remaining_plot_frequencies.pop(0)
-
-            previous_frequency = frequency
-
-            for wheel_name in wheel_names:
-                interface_name = f'state_interface.{wheel_name}/velocity'
-
-                ydata = bag_df[interface_name].to_numpy(dtype=np.float64)
-
-                sel_gain = (wheel_name, 'gain')
-                sel_phase = (wheel_name, 'phase')
-
-                if bodeplot_phase_method == 'continuous':
-                    initial_phase = (
-                        0.0 if len(bode_df.loc[:, sel_phase]) < 2
-                        else bode_df.loc[:, sel_phase].iat[-2]
-                    )
-                    max_phase = min(initial_phase + np.pi/2, 0)
-                    min_phase = max_phase - 2*np.pi
-
-                    if len(bode_df.loc[:, sel_phase]) < 2:
-                        initial_phase = (max_phase + min_phase)/2
-                else:
-                    assert bodeplot_phase_method == 'zero'
-                    initial_phase = 0.0
-                    max_phase = np.pi
-                    min_phase = -np.pi
-
-                print(initial_phase, max_phase, min_phase, max_phase-min_phase)
-
-                # Filter out nans
-                xdata_valid = np.isfinite(xdata[datarange_selector])
-                ydata_valid = np.isfinite(ydata[datarange_selector])
-                valid_data_mask = xdata_valid & ydata_valid
-
-                if not filter_data:
-                    valid_data_mask[:] = True
-
-                # angular_frequency = 2.0 * np.pi * frequency
-                f = lambda x, gain, phase: (  # noqa: E731
-                    # TODO(SuperJappie08): 20250916 Is phase shift location correct???
-                    gain * amplitude * np.sin(
-                                          frequency * 2.0 * np.pi * x + phase + phase_offset
-                                      ) + offset
-                )
-                (gain_scale, phase), _ = curve_fit(
-                    f,
-                    xdata[datarange_selector][valid_data_mask],
-                    ydata[datarange_selector][valid_data_mask],
-                    np.array([1.0, initial_phase]),
-                    bounds=([0.0, min_phase], [np.inf, max_phase]),
-                    # bounds=( # TODO: This could work if dynamically adjust the lower bound
-                    #     [0.0, initial_phase - np.pi/2],
-                    #     [np.inf, min(initial_phase + np.pi/2, 0)],
-                    #              # NOTE: Was a pi/3 at somepoint
-                    # ),
+                # NOTE: There is a default as fallback, since first preliminary recording did not
+                #       store this data.
+                controller_name = custom_metadata.get(
+                    'controller_name',
+                    'multi_wheel_response_controller',
                 )
 
-                bode_df.loc[frequency, sel_gain] = gain_scale
-                bode_df.loc[frequency, sel_phase] = phase
+                statistics_collector = StatisticsCollector(
+                    '/controller_manager/introspection_data',
+                    only_names=names_to_keep,
+                )
 
-                if (plot_all_frequencies or do_plot) and (
-                        wheels_to_plot == 'all' or wheels_to_plot in wheel_name):
-                    freq_plot_extra_fmt = {}
-                    if debug_frequency_plot:
-                        freq_plot_extra_fmt['marker'] = '.'
+                start_activity_time: 'Optional[MsgTime]' = None
+                accepting_data: bool = False
+                for topic, msg, recv_time in read_messages(reader, storage_filter):
+                    if topic == '/rosout' and msg.name == 'controller_manager' and \
+                            msg.msg == f'Activating controllers: [ {controller_name} ]':
+                        start_activity_time = msg.stamp
 
-                    plt.figure()
-                    plt.suptitle(f'{wheel_name} @ f = {frequency}Hz')
-                    plt.title(f'phase delay = {phase:.03}rad/s, gain = {gain_scale:.03}')
-                    plt.plot(
-                        xdata[datarange_selector],
-                        bag_df[f'command_interface.{wheel_name}/velocity'].to_numpy(
-                            dtype=np.float64,
-                        )[datarange_selector],
-                        label='command',
-                        **freq_plot_extra_fmt)
-                    plt.plot(
-                        xdata[datarange_selector],
-                        ydata[datarange_selector],
-                        label='measurement',
-                        **freq_plot_extra_fmt)
-                    plt.plot(
-                        xdata[datarange_selector],
-                        f(xdata[datarange_selector], gain_scale, phase),
-                        label='fit',
-                        **freq_plot_extra_fmt)
-                    plt.xticks(xdata[slice(
-                        datarange_selector.start,
-                        datarange_selector.stop,
-                        100,
-                    )])
-                    plt.xlabel('Time (s)')
-                    plt.ylabel('speed (rad/s)')
-                    plt.legend()
-                    plt.show(block=False)
+                    if topic.endswith('/activity'):
+                        controller_status: 'NamedLifecycleState' = next(
+                            filter(
+                                lambda controller: controller.name == controller_name,
+                                cast('ControllerManagerActivity', msg).controllers,
+                            ),
+                        )
+
+                        # TODO: Maybe do this the time stamps instead to prevent different ordering
+                        accepting_data = controller_status.state.id == utils.LIFECYCLE_ACTIVE_ID
+                        logger.info(
+                            "%s recording data on '%s'",
+                            'Started' if accepting_data else 'Stopped',
+                            statistics_collector.base_topic,
+                        )
+
+                    if topic.startswith(statistics_collector.base_topic) and (
+                        accepting_data or topic.endswith('/names')
+                    ):
+                        statistics_collector.process_msg(topic, msg, try_process=False)
+
+                assert start_activity_time is not None
+                bag_df = statistics_collector.data.copy(True)
+                bag_df.index = bag_df.index - utils.as_time(start_activity_time)
+
+                xdata = bag_df.index.to_numpy(dtype=np.float64)
+                bode_df.loc[frequency] = {
+                    wheel_name: dict.fromkeys(('gain', 'phase'), np.nan)
+                    for wheel_name in wheel_names
+                }
+
+                do_plot = plot_frequencies is not None and (
+                    any(np.isclose(frequency, plot_frequencies)) or
+                    previous_frequency is not None and bool(remaining_plot_frequencies) and
+                    previous_frequency < frequency and frequency >= remaining_plot_frequencies[0])
+
+                if do_plot:
+                    remaining_plot_frequencies.pop(0)
+
+                previous_frequency = frequency
+
+                for wheel_name in wheel_names:
+                    interface_name = f'state_interface.{wheel_name}/velocity'
+
+                    ydata = bag_df[interface_name].to_numpy(dtype=np.float64)
+
+                    sel_gain = (wheel_name, 'gain')
+                    sel_phase = (wheel_name, 'phase')
+
+                    if bodeplot_phase_method == 'continuous':
+                        initial_phase = (
+                            0.0 if len(bode_df.loc[:, sel_phase]) < 2
+                            else bode_df.loc[:, sel_phase].iat[-2]
+                        )
+                        max_phase = min(initial_phase + np.pi/2, 0)
+                        min_phase = max_phase - 2*np.pi
+
+                        if len(bode_df.loc[:, sel_phase]) < 2:
+                            initial_phase = (max_phase + min_phase)/2
+                    else:
+                        assert bodeplot_phase_method == 'zero'
+                        initial_phase = 0.0
+                        max_phase = np.pi
+                        min_phase = -np.pi
+
+                    logger.debug(
+                        "'%s' initial_phase %f [%f, %f] (range %f)",
+                        wheel_name,
+                        initial_phase,
+                        min_phase,
+                        max_phase,
+                        max_phase-min_phase,
+                    )
+
+                    # Filter out nans
+                    xdata_valid = np.isfinite(xdata[datarange_selector])
+                    ydata_valid = np.isfinite(ydata[datarange_selector])
+                    valid_data_mask = xdata_valid & ydata_valid
+
+                    if not filter_data:
+                        valid_data_mask[:] = True
+
+                    # angular_frequency = 2.0 * np.pi * frequency
+                    f = lambda x, gain, phase: (  # noqa: E731
+                        # TODO(SuperJappie08): 20250916 Is phase shift location correct???
+                        gain * amplitude * np.sin(
+                                            frequency * 2.0 * np.pi * x + phase + phase_offset
+                                        ) + offset
+                    )
+                    (gain_scale, phase), _ = curve_fit(
+                        f,
+                        xdata[datarange_selector][valid_data_mask],
+                        ydata[datarange_selector][valid_data_mask],
+                        np.array([1.0, initial_phase]),
+                        bounds=([0.0, min_phase], [np.inf, max_phase]),
+                    )
+
+                    bode_df.loc[frequency, sel_gain] = gain_scale
+                    bode_df.loc[frequency, sel_phase] = phase
+
+                    if (plot_all_frequencies or do_plot) and (
+                            wheels_to_plot == 'all' or wheels_to_plot in wheel_name):
+                        freq_plot_extra_fmt = {}
+                        if debug_frequency_plot:
+                            freq_plot_extra_fmt['marker'] = '.'
+
+                        plt.figure()
+                        plt.suptitle(f'{wheel_name} @ f = {frequency}Hz')
+                        plt.title(f'phase delay = {phase:.03}rad/s, gain = {gain_scale:.03}')
+                        plt.plot(
+                            xdata[datarange_selector],
+                            bag_df[f'command_interface.{wheel_name}/velocity'].to_numpy(
+                                dtype=np.float64,
+                            )[datarange_selector],
+                            label='command',
+                            **freq_plot_extra_fmt)
+                        plt.plot(
+                            xdata[datarange_selector],
+                            ydata[datarange_selector],
+                            label='measurement',
+                            **freq_plot_extra_fmt)
+                        plt.plot(
+                            xdata[datarange_selector],
+                            f(xdata[datarange_selector], gain_scale, phase),
+                            label='fit',
+                            **freq_plot_extra_fmt)
+                        plt.xticks(xdata[slice(
+                            datarange_selector.start,
+                            datarange_selector.stop,
+                            100,
+                        )])
+                        plt.xlabel('Time (s)')
+                        plt.ylabel('speed (rad/s)')
+                        plt.legend()
+                        plt.show(block=False)
 
     # FIXME: ADD DATA EXPORT MODES (So make plot, save plot, save data)
     for idx, wheel_name in enumerate(wheel_names):

@@ -18,6 +18,15 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from builtin_interfaces.msg import Time
 
+# LIFECYCLE_ACTIVE_ID is hard-coded, but if the messages are available, it will be verified.
+try:
+    LIFECYCLE_ACTIVE_ID: int = 3
+    from lifecycle_msgs.msg import State
+
+    assert LIFECYCLE_ACTIVE_ID == State.PRIMARY_STATE_ACTIVE
+except ImportError:
+    pass
+
 
 def as_time(stamp: 'Time') -> Decimal:
     return Decimal(f'{stamp.sec}.{stamp.nanosec:0>9}')

@@ -21,6 +21,7 @@ setup(
     entry_points={
         'console_scripts': [
             f'bodeplotter = {package_name}.bodeplot:main',
+            f'step_response = {package_name}.step_response:main',
         ],
     },
 )
