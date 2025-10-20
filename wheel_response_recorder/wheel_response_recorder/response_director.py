@@ -18,7 +18,7 @@ import itertools
 import platform
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING
 
 from controller_manager.controller_manager_services import list_hardware_components
 from controller_manager_msgs.srv import ListHardwareComponents
@@ -30,6 +30,7 @@ import rclpy.parameter_client
 import rosbag2_py
 from tqdm.contrib.itertools import product as tqdm_product
 
+from .continue_service import ContinueService
 from .controller_context import active_controller
 from .parameter_iterator import ParameterIterator
 from .response_director_parameters import response_director as response_director_parameters
@@ -108,6 +109,9 @@ def main(args=None):
 
             custom_data['controller_name'] = params.controller_name
 
+            # Store if recorded in manual mode since it can influence the data
+            custom_data['manual_mode'] = str(params.manual_mode)
+
             recorder_options = rosbag2_py.RecordOptions()
             recorder_options.topics = list(
                 set(
@@ -140,6 +144,10 @@ def main(args=None):
             param_client.wait_for_services()
 
             param_prefix = params.parameter_prefix
+
+            continue_service: Optional[ContinueService] = None
+            if params.manual_mode:
+                continue_service = ContinueService(node)
 
             recorder = rosbag2_py.Recorder()
             record_thread = None
@@ -194,10 +202,6 @@ def main(args=None):
                     timespec='seconds',
                 )
 
-                # recording_duration = max(
-                #     params.measurement_duration,
-                #     2 / dict(new_params)['frequency'],
-                # )
                 measurement_duration_locals = {
                     'measurement_duration': params.measurement_duration,
                 }
@@ -214,6 +218,9 @@ def main(args=None):
                     storage_preset_profile='zstd_fast',
                     custom_data=custom_data.copy(),
                 )
+
+                if continue_service is not None:
+                    continue_service.wait_for_ready(exc)
 
                 record_thread = threading.Thread(
                     target=recorder.record,

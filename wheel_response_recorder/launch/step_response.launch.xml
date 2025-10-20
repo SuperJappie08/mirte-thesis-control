@@ -22,6 +22,7 @@
   <arg name="measurement_duration" default="5.0" />
 
   <arg name="extra_notes" default="" description="Extra notes to store with the measurements" />
+  <arg name="manual" default="False" description="Wait for continue service call between measurements"/>
 
   <group forwarding="False">
     <keep name="audit-progress" value="$(var audit-progress)" />
@@ -36,6 +37,7 @@
     <keep name="measurement_duration" value="$(var measurement_duration)" />
 
     <keep name="extra_notes" value="$(var extra_notes)" />
+    <keep name="manual" value="$(var manual)"/>
 
     <include file="$(find-pkg-share wheel_response_recorder)/launch/measure.launch.xml">
       <arg name="audit-progess" value="$(var audit-progress)" />
@@ -55,6 +57,7 @@
       <arg name="hw_interface" value="$(var hw_interface)" />
 
       <arg name="extra_notes" value="$(var extra_notes)" />
+      <arg name="manual" value="$(var manual)" />
     </include>
   </group>
 </launch>

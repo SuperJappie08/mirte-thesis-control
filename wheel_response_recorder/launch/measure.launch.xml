@@ -47,6 +47,7 @@
   <arg name="measurement_duration" />
 
   <arg name="extra_notes" default="" description="Extra notes to store with the measurements" />
+  <arg name="manual" default="False" description="Wait for continue service call between measurements"/>
 
   <group>
     <let name="launch-prefix" value="xterm -geometry 160x2 -e" if="$(var audit-progress)" />
@@ -63,6 +64,7 @@
       <param name="measurement_duration" value="$(var measurement_duration)" />
 
       <param name="extra_notes" value="$(var extra_notes)" />
+      <param name="manual_mode" value="$(var manual)"/>
 
       <param from="$(var parameter_filepath)" />
     </node>

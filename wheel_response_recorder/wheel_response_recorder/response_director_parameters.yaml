@@ -22,6 +22,14 @@ response_director:
     validation:
       gt<>: 0.0
 
+  manual_mode:
+    type: bool
+    default_value: false
+    description: >-
+      When enabling manual mode a continue service must be called to start the measurement.
+      (Useful for ground measumerents)
+    read_only: true
+
   # This is going to be an unsafe use of eval, but doing this differently would be difficult
   measurement_duration_modifier:
     type: string
