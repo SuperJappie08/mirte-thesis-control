@@ -121,6 +121,9 @@ def main(args=None):
                         f'{controller_manager}/introspection_data/full',
                         f'{controller_manager}/introspection_data/names',
                         f'{controller_manager}/introspection_data/values',
+                        f'{controller_manager}/statistics/full',
+                        f'{controller_manager}/statistics/names',
+                        f'{controller_manager}/statistics/values',
                         '/diagnostics',
                         '/rosout',
                     ]

@@ -3,6 +3,8 @@
     <arg name="control_setup" value="$(var control_setup)" />
   </include>
 
+  <include file="$(find-pkg-share wheel_response_recorder)/launch/prepare/prepare_diagnostics.launch.xml" />
+
   <spawn_controller final_controller_state="inactive">
     <controller name="multi_wheel_step_controller">
       <param from="$(find-pkg-share wheel_response_recorder)/config/multi_wheel_step_controller.yaml"/>

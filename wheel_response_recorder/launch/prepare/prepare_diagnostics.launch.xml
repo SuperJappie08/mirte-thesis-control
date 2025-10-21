@@ -1,0 +1,7 @@
+<launch>
+  <arg name="record_diagnostics" default="False"
+    description="Start CPU and RAM diagnostics for recording." />
+
+  <include file="$(find-pkg-share wheel_response_recorder)/launch/diagnostics.launch.xml"
+    if="$(var record_diagnostics)" />
+</launch>

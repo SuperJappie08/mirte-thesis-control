@@ -1,0 +1,5 @@
+<launch>
+  <node pkg="diagnostic_common_diagnostics" exec="cpu_monitor.py" name="cpu_monitor" />
+
+  <node pkg="diagnostic_common_diagnostics" exec="ram_monitor.py" name="ram_monitor" />
+</launch>
