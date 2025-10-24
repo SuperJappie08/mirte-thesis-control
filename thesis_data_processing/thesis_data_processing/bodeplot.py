@@ -47,6 +47,7 @@ except ImportError:
 
 from . import DataConsistencyChecker
 from . import open_rosbag
+from . import plot_utils
 from . import read_messages
 from . import StatisticsCollector
 from . import utils
@@ -353,6 +354,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                         plt.xlabel('Time (s)')
                         plt.ylabel('speed (rad/s)')
                         plt.legend()
+                        plot_utils.connect_mpl_keyboard_handler(plt.gcf())
                         plt.show(block=False)
 
     # FIXME: ADD DATA EXPORT MODES (So make plot, save plot, save data)
@@ -406,6 +408,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             case _:
                 raise ValueError('Unknown plot Phase scale')
 
+        plot_utils.connect_mpl_keyboard_handler(fig)
         plt.show(block=(idx + 1 == len(wheel_names)))
 
     raise NotImplementedError()

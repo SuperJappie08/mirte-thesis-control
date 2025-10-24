@@ -12,20 +12,19 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from . import conversions
-from . import plot_utils
-from . import utils
-from .data_consistency_checker import DataConsistencyChecker
-from .rosbag_reader_utils import open_rosbag
-from .rosbag_reader_utils import read_messages
-from .statistics_collector import StatisticsCollector
+from typing import TYPE_CHECKING
 
-__all__ = [
-    'DataConsistencyChecker',
-    'StatisticsCollector',
-    'conversions',
-    'open_rosbag',
-    'read_messages',
-    'plot_utils',
-    'utils',
-]
+import matplotlib.pyplot as plt
+
+if TYPE_CHECKING:
+    from matplotlib.backend_bases import KeyEvent
+    from matplotlib.figure import FigureBase
+
+
+def connect_mpl_keyboard_handler(fig: 'FigureBase'):
+    fig.canvas.mpl_connect('key_press_event', mpl_keyboard_close_all)
+
+
+def mpl_keyboard_close_all(event: 'KeyEvent'):
+    if event.key == 'ctrl+q':
+        plt.close('all')

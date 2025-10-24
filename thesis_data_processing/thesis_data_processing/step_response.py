@@ -32,6 +32,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 from . import DataConsistencyChecker
 from . import open_rosbag
+from . import plot_utils
 from . import read_messages
 from . import StatisticsCollector
 from . import utils
@@ -87,6 +88,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         excluded_keys=('recording_duration', 'recording_date', STEP_COMMAND_KEY),
         )
 
+    # TODO(SuperJappie08): Do something with diagnostics
     storage_filter = StorageFilter(
         topics=[
             '/controller_manager/introspection_data/names',
@@ -252,6 +254,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         )
         plt.suptitle(wheel_name)
         plt.title(step_command)
+        plot_utils.connect_mpl_keyboard_handler(plt.gcf())
         plt.show(block=False)
 
     plt.show()
