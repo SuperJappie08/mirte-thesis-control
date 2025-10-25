@@ -243,34 +243,55 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                     data_df.loc[:, (*selector, 'state')] = \
                         bag_df[f'state_interface.{wheel_name}/velocity']
 
-    for step_command, wheel_name in itertools.product(trials.keys(), wheel_names):
+    for (step_command, wheel_name) in itertools.product(trials.keys(), wheel_names):
         logger.info('%s %s', wheel_name, step_command)
+        trials_df: pd.DataFrame = data_df.loc[:, (wheel_name, step_command)]
 
-        # for data_keys in data_df.loc[:, (wheel_name, step_command)]:
-        #     print(data_df.loc[:, (wheel_name, step_command,*data_keys)])
-        data_df.loc[:, (wheel_name, step_command)].plot.line(
-            ylabel='Velocity (rad/s)',
-            xlabel='Time (s)',
-        )
+        # NOTE: Make a custom figure to enable plotting the command first
+        fig, ax = plt.subplots()
+        plt_kwargs = {
+            'ax': ax,
+            'use_index': True,
+            'legend': False,
+        }
+
+        mean_command: pd.Series = trials_df.loc[:, (slice(None), 'command')].mean(axis=1)
+        mean_command.plot.line(**plt_kwargs, label='Command', color='grey')
+
+        trials_df.loc[:, (slice(None), 'state')].plot.line(**plt_kwargs, linestyle=':')
+        for idx, line in enumerate(ax.get_lines()[1:], start=1):
+            line.set_label(f'State {idx}')
+
+        mean_state: pd.Series = trials_df.loc[:, (slice(None), 'state')].mean(axis=1)
+        mean_state.plot.line(**plt_kwargs, label='State (avg)')
+
+        plt.xlabel('Time (s)')
+        plt.ylabel('Velocity (rad/s)')
+        plt.legend()
         plt.suptitle(wheel_name)
         plt.title(step_command)
-        plot_utils.connect_mpl_keyboard_handler(plt.gcf())
+
+        plot_utils.connect_mpl_keyboard_handler(fig)
         plt.show(block=False)
 
     plt.show()
 
-    # TODO(SuperJappie08): Some data is missing, but it is not critical for this measurement
-    # data_dict = {
-    #     k: { vk: vv for vk, vv in v.items() if math.isnan(vv)}
-    #     for k, v in data_df.to_dict().items()
-    # }
+    # NOTE(SuperJappie08): Some data is missing, but it is not critical for this measurement
     data_dict = {
         (*k, vk): vv
         for k, v in data_df.to_dict().items()
         for vk, vv in v.items()
         if not math.isfinite(vv)
     }
+    data_dict_unique_sorted = sorted(
+        filter(
+            lambda n: n[0][0] == sorted(wheel_names)[0] and n[0][3] == 'command',
+            data_dict.items(),
+        ),
+        key=lambda n: n[0][-1],
+    )
 
-    pprint(data_dict)
+    assert len(data_dict) == 8*len(data_dict_unique_sorted), 'Unequally Missing data'
+    pprint(data_dict_unique_sorted, width=120)
 
     raise NotImplementedError()
