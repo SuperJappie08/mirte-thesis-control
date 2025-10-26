@@ -67,30 +67,35 @@ T_STEP_KEY = 'step.t_step'
 INITIAL_COMMAND_KEY = 'step.initial_commmand'
 
 
-def main(args: Optional[Sequence[str]] = None) -> int:
-    logging.basicConfig(level=logging.INFO)
-    parser = argparse.ArgumentParser(
-        'step_response',
-        description='Use on a folder of created data to make analyze step response behavior.')
-    parser.add_argument(
-        'folder',
-        type=Path, metavar='FOLDER',
-        help='The folder containing the rosbags')
+def get_trial_data(data_folder: Path) -> tuple[int, list[Decimal]]:
+    logger.info("Checking which trials are run in '%s'", data_folder)
 
-    parsed_args = parser.parse_args(args)
+    trials: dict[Decimal, int] = {}
+    for rosbag_path in tqdm(sorted(data_folder.glob('*')), desc='Bags'):
+        with open_rosbag(StorageOptions(uri=str(rosbag_path))) as reader:
+            step_command = Decimal(reader.get_metadata().custom_data[STEP_COMMAND_KEY])
+            trials[step_command] = trials.get(step_command, 0) + 1
 
-    # Process arguments
+    assert len(set(trials.values())) == 1, 'All trials should be run an equal amount of times'
+    max_trials = set(trials.values()).pop()
+    trial_idxs = list(trials.keys())
 
-    # Data settings
-    data_folder: Path = cast(Path, parsed_args.folder).expanduser().absolute()
+    return max_trials, trial_idxs
 
-    assert data_folder.is_dir(), "The specified 'FOLDER' must be a folder containing rosbags"
 
+def create_dataframes(
+    data_folder: Path,
+    wheel_names: set[str],
+    command_interfaces: set[str],
+    trials: set[Decimal],
+    max_trials: int,
+    names_to_keep: Optional[set[str]] = None,
+    diagnostics_name_mapping: Optional[dict[str, str]] = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     datachecker = DataConsistencyChecker(
         excluded_keys=('recording_duration', 'recording_date', STEP_COMMAND_KEY),
     )
 
-    # TODO(SuperJappie08): Do something with diagnostics
     storage_filter = StorageFilter(
         topics=[
             '/controller_manager/introspection_data/names',
@@ -102,61 +107,21 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         regex_to_exclude='.*/_service_event',
     )
 
-    wheel_names: set[str] = {
-        f'{fb_pos}_{side}_wheel_joint'
-        for fb_pos, side in itertools.product(('front', 'rear'), ('left', 'right'))
-    }
-
-    state_interfaces: set[str] = {
-        f'state_interface.{wheel_name}/velocity'
-        for wheel_name in wheel_names
-    }
-
-    command_interfaces: set[str] = {
-        f'command_interface.{wheel_name}/velocity'
-        for wheel_name in wheel_names
-    }
-
-    names_to_keep: set[str] = state_interfaces | command_interfaces
-
-    logger.info("Checking which trials are run in '%s'", data_folder)
-    trials: dict[Decimal, int] = {}
-    for rosbag_path in sorted(data_folder.glob('*')):
-        with open_rosbag(StorageOptions(uri=str(rosbag_path))) as reader:
-            step_command = Decimal(reader.get_metadata().custom_data[STEP_COMMAND_KEY])
-            trials[step_command] = trials.get(step_command, 0) + 1
-
-    assert len(set(trials.values())) == 1, 'All trials should be run an equal amount of times'
-    max_trial = set(trials.values()).pop()
-
     # Hardcoded variations
     data_df: pd.DataFrame = pd.DataFrame(
         columns=pd.MultiIndex.from_product([
             wheel_names,
-            sorted(trials.keys()),
-            tuple(range(max_trial)),
+            sorted(trials),
+            tuple(range(max_trials)),
             ('command', 'state'),
         ],
             names=['wheel', 'step size', 'trial number', 'signal'],
         ),
     )
     data_df.index.name = 'time'
+    diagnostics_data_df: Optional[pd.DataFrame] = None
 
-    diagnostics_data_df = pd.DataFrame(
-        columns=pd.MultiIndex.from_product([
-            sorted(trials.keys()),
-            tuple(range(max_trial)),
-        ],
-            names=['step size', 'trial number'],
-        ),
-    )
-    diagnostics_data_df.index.name = 'time'
-
-    diagnostics_name_mapping = {}
-    diagnostics_name_mapping.update(CONTROLLER_MANAGER_DIAGNOSTIC_NAME_MAPPING)
-    diagnostics_name_mapping.update(SYSTEM_DIAGNOSTIC_NAME_MAPPING)
-
-    trials.clear()
+    trials_idxs: dict[Decimal, int] = {}
     with logging_redirect_tqdm(tqdm_class=tqdm):
         for rosbag_path in tqdm(sorted(data_folder.glob('*')), desc='Bags'):
             logger.info("Processing '%s'", str(rosbag_path.stem))
@@ -250,20 +215,8 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 #         np.roll(bag_df.index.diff() != Decimal('0.05'), 1) |
                 #         np.roll(bag_df.index.diff() != Decimal('0.05'), -1)])
 
-                # # NOTE: For when rounding is disabled
-                # if not np.all(np.isclose(
-                #         np.diff(np.asarray(
-                #             [round(idx, 2) for idx in bag_df.index])).astype(float),
-                #         0.05)):
-                #     key = np.isclose(np.diff(
-                #             np.asarray(
-                #                 [round(idx, 2) for idx in bag_df.index]).astype(np.float64),
-                #             prepend=[np.nan],
-                #         ), 0.05)
-                #     print(bag_df[~key | np.roll(~key, 1) | np.roll(~key, -1)])
-
-                trial_number = trials.get(step_command, 0)
-                trials[step_command] = trial_number + 1
+                trial_number = trials_idxs.get(step_command, 0)
+                trials_idxs[step_command] = trial_number + 1
 
                 trial_selector = (step_command, trial_number)
                 for wheel_name in wheel_names:
@@ -275,11 +228,11 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                     data_df.loc[:, (*wheel_selector, 'state')] = \
                         bag_df[f'state_interface.{wheel_name}/velocity']
 
-                if diagnostics_data_df.columns.get_level_values(-1).dtype == np.int64:
+                if diagnostics_data_df is None:
                     diagnostics_data_df = pd.DataFrame(
                         columns=pd.MultiIndex.from_product([
-                            sorted(trials.keys()),
-                            tuple(range(max_trial)),
+                            sorted(trials),
+                            tuple(range(max_trials)),
                             diagnostics_df.columns.array,
                         ],
                             names=['step size', 'trial number', 'data'],
@@ -300,9 +253,65 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
                 diagnostics_data_df = diagnostics_data_df.copy()
 
+    assert diagnostics_data_df is not None
     diagnostics_data_df = diagnostics_data_df.dropna(how='all').copy(deep=True)
 
-    for (step_command, wheel_name) in itertools.product(trials.keys(), wheel_names):
+    return data_df, diagnostics_data_df
+
+
+def main(args: Optional[Sequence[str]] = None) -> int:
+    logging.basicConfig(level=logging.INFO)
+    parser = argparse.ArgumentParser(
+        'step_response',
+        description='Use on a folder of created data to make analyze step response behavior.')
+    parser.add_argument(
+        'folder',
+        type=Path, metavar='FOLDER',
+        help='The folder containing the rosbags')
+
+    parsed_args = parser.parse_args(args)
+
+    # Process arguments
+
+    # Data settings
+    data_folder: Path = cast(Path, parsed_args.folder).expanduser().absolute()
+
+    assert data_folder.is_dir(), "The specified 'FOLDER' must be a folder containing rosbags"
+
+    wheel_names: set[str] = {
+        f'{fb_pos}_{side}_wheel_joint'
+        for fb_pos, side in itertools.product(('front', 'rear'), ('left', 'right'))
+    }
+
+    state_interfaces: set[str] = {
+        f'state_interface.{wheel_name}/velocity'
+        for wheel_name in wheel_names
+    }
+
+    command_interfaces: set[str] = {
+        f'command_interface.{wheel_name}/velocity'
+        for wheel_name in wheel_names
+    }
+
+    names_to_keep: set[str] = state_interfaces | command_interfaces
+
+    max_trial, trials = get_trial_data(data_folder)
+
+    diagnostics_name_mapping = {}
+    diagnostics_name_mapping.update(CONTROLLER_MANAGER_DIAGNOSTIC_NAME_MAPPING)
+    diagnostics_name_mapping.update(SYSTEM_DIAGNOSTIC_NAME_MAPPING)
+
+    data_df, diagnostics_data_df = create_dataframes(
+        data_folder=data_folder,
+        wheel_names=wheel_names,
+        command_interfaces=command_interfaces,
+        trials=set(trials),
+        max_trials=max_trial,
+        names_to_keep=names_to_keep,
+        diagnostics_name_mapping=diagnostics_name_mapping,
+    )
+
+    for (step_command, wheel_name) in itertools.product(trials, wheel_names):
         logger.info('%s %s', wheel_name, step_command)
         trials_df: pd.DataFrame = data_df.loc[:, (wheel_name, step_command)]
 
