@@ -11,6 +11,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+
 from typing import assert_type, Optional, TYPE_CHECKING
 
 import pandas as pd
@@ -25,9 +26,7 @@ if TYPE_CHECKING:
     logging: ModuleType
 
 try:
-    import colorlog
-
-    logging = colorlog
+    import colorlog as logging
 except ImportError:
     import logging
 

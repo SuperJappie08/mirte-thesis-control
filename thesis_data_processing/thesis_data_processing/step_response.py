@@ -30,11 +30,14 @@ from rosbag2_py import StorageOptions
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+from . import CONTROLLER_MANAGER_DIAGNOSTIC_NAME_MAPPING
 from . import DataConsistencyChecker
+from . import DiagnosticsCollector
 from . import open_rosbag
 from . import plot_utils
 from . import read_messages
 from . import StatisticsCollector
+from . import SYSTEM_DIAGNOSTIC_NAME_MAPPING
 from . import utils
 
 if TYPE_CHECKING:
@@ -48,9 +51,7 @@ if TYPE_CHECKING:
     logging: ModuleType
 
 try:
-    import colorlog
-
-    logging = colorlog
+    import colorlog as logging
 except ImportError:
     import logging
 
@@ -80,13 +81,13 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     # Process arguments
 
     # Data settings
-    data_folder: Path = cast(Path, parsed_args.folder).absolute()
+    data_folder: Path = cast(Path, parsed_args.folder).expanduser().absolute()
 
     assert data_folder.is_dir(), "The specified 'FOLDER' must be a folder containing rosbags"
 
     datachecker = DataConsistencyChecker(
         excluded_keys=('recording_duration', 'recording_date', STEP_COMMAND_KEY),
-        )
+    )
 
     # TODO(SuperJappie08): Do something with diagnostics
     storage_filter = StorageFilter(
@@ -94,6 +95,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             '/controller_manager/introspection_data/names',
             '/controller_manager/introspection_data/values',
             '/controller_manager/activity',
+            '/diagnostics',
             '/rosout',
         ],
         regex_to_exclude='.*/_service_event',
@@ -139,6 +141,20 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     )
     data_df.index.name = 'time'
 
+    diagnostics_data_df = pd.DataFrame(
+        columns=pd.MultiIndex.from_product([
+            sorted(trials.keys()),
+            tuple(range(max_trial)),
+        ],
+            names=['step size', 'trial number'],
+        ),
+    )
+    diagnostics_data_df.index.name = 'time'
+
+    diagnostics_name_mapping = {}
+    diagnostics_name_mapping.update(CONTROLLER_MANAGER_DIAGNOSTIC_NAME_MAPPING)
+    diagnostics_name_mapping.update(SYSTEM_DIAGNOSTIC_NAME_MAPPING)
+
     trials.clear()
     with logging_redirect_tqdm(tqdm_class=tqdm):
         for rosbag_path in tqdm(sorted(data_folder.glob('*')), desc='Bags'):
@@ -162,6 +178,10 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 statistics_collector = StatisticsCollector(
                     '/controller_manager/introspection_data',
                     only_names=names_to_keep,
+                )
+
+                diagnostics_collector = DiagnosticsCollector(
+                    name_mapping=diagnostics_name_mapping,
                 )
 
                 start_activity_time: 'Optional[MsgTime]' = None
@@ -189,12 +209,16 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                         accepting_data or topic.endswith('/names')
                     ):
                         statistics_collector.process_msg(topic, msg, try_process=False)
+                    elif accepting_data and topic == '/diagnostics':
+                        diagnostics_collector.process_msg(msg, try_process=False)
 
                 assert start_activity_time is not None
 
                 bag_df = statistics_collector.data.copy(True)
+                diagnostics_df = diagnostics_collector.data.copy(True)
                 # First attempt to synchronize based on activation
                 bag_df.index = bag_df.index - utils.as_time(start_activity_time)
+                diagnostics_df.index = diagnostics_df.index - utils.as_time(start_activity_time)
 
                 # NOTE: In order to average multiple measurements it is necessary to index them
                 #       exactly. Therefore we assume that the first reported
@@ -210,6 +234,12 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 bag_df.index = [
                     abs(round(idx, 2)) if round(idx, 2).is_zero() else round(idx, 2)
                     for idx in bag_df.index
+                ]
+
+                diagnostics_df.index = diagnostics_df.index - measured_command_t_step + t_step
+                diagnostics_df.index = [
+                    abs(round(idx, 2)) if round(idx, 2).is_zero() else round(idx, 2)
+                    for idx in diagnostics_df.index
                 ]
 
                 # # Detect missing value messages.
@@ -234,14 +264,42 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 trial_number = trials.get(step_command, 0)
                 trials[step_command] = trial_number + 1
 
+                trial_selector = (step_command, trial_number)
                 for wheel_name in wheel_names:
-                    selector = (wheel_name, step_command, trial_number)
-                    logger.info("Processing '%s' @ step command %s # %d", *selector)
+                    wheel_selector = (wheel_name, *trial_selector)
+                    logger.info("Processing '%s' @ step command %s # %d", *wheel_selector)
 
-                    data_df.loc[:, (*selector, 'command')] = \
+                    data_df.loc[:, (*wheel_selector, 'command')] = \
                         bag_df[f'command_interface.{wheel_name}/velocity']
-                    data_df.loc[:, (*selector, 'state')] = \
+                    data_df.loc[:, (*wheel_selector, 'state')] = \
                         bag_df[f'state_interface.{wheel_name}/velocity']
+
+                if diagnostics_data_df.columns.get_level_values(-1).dtype == np.int64:
+                    diagnostics_data_df = pd.DataFrame(
+                        columns=pd.MultiIndex.from_product([
+                            sorted(trials.keys()),
+                            tuple(range(max_trial)),
+                            diagnostics_df.columns.array,
+                        ],
+                            names=['step size', 'trial number', 'data'],
+                        ),
+                        index=pd.Index([
+                                Decimal(idx) / 100
+                                for idx in range(int(data_df.index[-1] * 100) + 50)
+                            ],
+                            name='time',
+                        ),
+                    )
+
+                for column in diagnostics_df.columns:
+                    diagnostics_data_df.loc[:, (*trial_selector, column)] = diagnostics_df[column]
+
+                assert diagnostics_df.count().sum() == \
+                    diagnostics_data_df.loc[:, (*trial_selector, slice(None))].count().sum()
+
+                diagnostics_data_df = diagnostics_data_df.copy()
+
+    diagnostics_data_df = diagnostics_data_df.dropna(how='all').copy(deep=True)
 
     for (step_command, wheel_name) in itertools.product(trials.keys(), wheel_names):
         logger.info('%s %s', wheel_name, step_command)
@@ -293,5 +351,8 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
     assert len(data_dict) == 8*len(data_dict_unique_sorted), 'Unequally Missing data'
     pprint(data_dict_unique_sorted, width=120)
+
+    # TODO(SuperJappie08): Do something with the data, it is all there, it is packed a bit weird.
+    pprint(sorted((index, row.count()) for (index, row) in diagnostics_data_df.items()), width=160)
 
     raise NotImplementedError()
