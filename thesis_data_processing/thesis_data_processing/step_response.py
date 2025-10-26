@@ -92,6 +92,27 @@ def create_dataframes(
     names_to_keep: Optional[set[str]] = None,
     diagnostics_name_mapping: Optional[dict[str, str]] = None,
 ) -> tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Generate dataframes for a series of step response trials.
+
+    :param data_folder: Path to the folder containing the rosbags
+    :type  data_folder: Path
+    :param wheel_names: The names of the wheels to include
+    :type  wheel_nanes: set[str]
+    :param command_interfaces: The names of the command interfaces to include
+    :type  command_interfaces: set[str]
+    :param trials: The trial stepsizes
+    :type  trials: set[Decimal]
+    :param max_trials:  The amount that each trial step size has been tested
+    :type  max_trials: int
+    :param names_to_keep:  Names to keep when processing data. Defaults to None.
+    :type  names_to_keep: Optional[set[str]], optional
+    :param diagnostics_name_mapping:  Diagnostic name mapping. Defaults to None.
+    :type  diagnostics_name_mapping: Optional[dict[str, str]], optional
+
+    :returns: Data, Diagnostics
+    :rtype: tuple[pd.DataFrame, pd.DataFrame]
+    """
     datachecker = DataConsistencyChecker(
         excluded_keys=('recording_duration', 'recording_date', STEP_COMMAND_KEY),
     )
