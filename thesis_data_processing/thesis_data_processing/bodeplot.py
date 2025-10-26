@@ -15,6 +15,7 @@
 import argparse
 from collections.abc import Sequence
 from copy import deepcopy
+from decimal import Decimal
 import itertools
 from pathlib import Path
 from typing import cast, Literal, Optional, TYPE_CHECKING
@@ -44,6 +45,7 @@ try:
 except ImportError:
     import logging
 
+from . import arguments
 from . import DataConsistencyChecker
 from . import open_rosbag
 from . import plot_utils
@@ -59,100 +61,44 @@ AMPLITUDE_KEY = 'sinusoid.amplitude'
 OFFSET_KEY = 'sinusoid.offset'
 PHASE_OFFSET_KEY = 'sinusoid.phase'
 
-
-def positive_int(value: str) -> int:
-    n = int(value)
-    if n <= 0:
-        raise argparse.ArgumentTypeError(f'{n} is not a positive integer. Must be larger than 0')
-    return n
+TIME_DECIMAL_PLACES: int = 2
 
 
-def main(args: Optional[Sequence[str]] = None) -> int:
-    logging.basicConfig(level=logging.INFO)
-    parser = argparse.ArgumentParser(
-        'bodeplotter',
-        description='Use on a folder of created data to make a bodeplot')
-    parser.add_argument(
-        'folder',
-        type=Path, metavar='FOLDER',
-        help='The folder containing the rosbags')
-    parser.add_argument(
-        '-N', '--filter-normal',
-        action='store_true', required=False,
-        help='Remove NAN and INF from data')
-    parser.add_argument(
-        '-S', '--skip-samples',
-        type=positive_int, required=False,
-        help='Amount of samples to skip at the beginning and end. Can be omitted to use all data')
+# TODO: Could make something generic that dynamically checks multiple keys
+def get_trial_data(data_folder: Path) -> tuple[int, list[Decimal], pd.DataFrame]:
+    logger.info("Checking which trials are run in '%s'", data_folder)
 
-    plot_frequency_group = parser.add_argument_group('Frequency plot configuration')
-    plot_frequency_select_group = plot_frequency_group.add_mutually_exclusive_group()
-    plot_frequency_select_group.add_argument(
-        '-f', '--plot-frequency',
-        action='append', nargs='*',
-        type=float, required=False,
-        help='The frequencies of the trails to plot separately.')
-    plot_frequency_select_group.add_argument(
-        '-F', '--plot-all-frequencies', action='store_true',
-        help='Plot the graphs at all frequencies.')
-    plot_frequency_group.add_argument(
-        '-w', '--plot-wheel',
-        action='store', default='front_left',
-        type=str, required=False,
-        help=('Which wheels to plot the supplied frequencies for. '
-              "'all' to plot all. Default is 'front_left'"))
-    plot_frequency_group.add_argument(
-        '-df', '--debug-frequency',
-        action='store_true', required=False,
-        help='Debug frequency plot style')
-
-    bode_plot_group = parser.add_argument_group('Bode plot style')
-    bode_plot_group.add_argument(
-        '-m', '--magnitude-unit',
-        choices=['dB', 'log'], default='dB',
-        help='The units of the magnitude axis')
-    bode_plot_group.add_argument(
-        '-p', '--phase-unit',
-        choices=['degrees', 'rad'], default='degrees',
-        help='The units of the phase axis')
-    bode_plot_group.add_argument(
-        '--phase-method',
-        choices=['zero', 'continuous'], default='zero',
-        help='How the phase is constraint during the calculations')
-
-    parsed_args = parser.parse_args(args)
-
-    filter_data = parsed_args.filter_normal
-    if not filter_data:
-        logger.warning('The data is NOT filtered for NAN and INF [LEGACY] Might not work')
-
-    datarange_selector = slice(
-        parsed_args.skip_samples,
-        -parsed_args.skip_samples if isinstance(parsed_args.skip_samples, int) else None,
+    param_df = pd.DataFrame(
+        columns=['amplitude', 'phase offset', 'offset'],
     )
+    param_df.index.name = 'frequency'
 
-    # Frequency plot options
-    plot_all_frequencies = parsed_args.plot_all_frequencies
-    plot_frequencies = None
-    remaining_plot_frequencies: list[float] = []
-    if parsed_args.plot_frequency:
-        plot_frequencies = np.asarray(
-            sorted(itertools.chain.from_iterable(parsed_args.plot_frequency)), dtype=np.float64)
-        remaining_plot_frequencies.extend(plot_frequencies.tolist())
-    wheels_to_plot = parsed_args.plot_wheel
-    debug_frequency_plot = parsed_args.debug_frequency
+    trials: dict[Decimal, int] = {}
+    for rosbag_path in tqdm(sorted(data_folder.glob('*')), desc='Bags'):
+        with open_rosbag(StorageOptions(uri=str(rosbag_path))) as reader:
+            frequency = Decimal(reader.get_metadata().custom_data[FREQUENCY_KEY])
+            param_df.loc[frequency, 'amplitude'] = \
+                Decimal(reader.get_metadata().custom_data[AMPLITUDE_KEY])
+            param_df.loc[frequency, 'phase offset'] = \
+                Decimal(reader.get_metadata().custom_data[PHASE_OFFSET_KEY])
+            param_df.loc[frequency, 'offset'] = \
+                Decimal(reader.get_metadata().custom_data[OFFSET_KEY])
 
-    # Bode Plot Settings
-    bodeplot_gain_scale: Literal['dB'] | Literal['log'] = parsed_args.magnitude_unit
-    bodeplot_phase_scale: Literal['rad'] | Literal['degrees'] = parsed_args.phase_unit
+            trials[frequency] = trials.get(frequency, 0) + 1
 
-    bodeplot_phase_method: Literal['zero'] | Literal['continuous'] = parsed_args.phase_method
+    assert len(set(trials.values())) == 1, 'All trials should be run an equal amount of times'
+    max_trials = set(trials.values()).pop()
+    trial_idxs = list(trials.keys())
 
-    # Data settings
-    data_folder: Path = cast(Path, parsed_args.folder).absolute()
+    return max_trials, trial_idxs, param_df
 
-    assert data_folder.is_dir(), "The specified 'FOLDER' must be a folder containing rosbags"
 
+def create_dataframes(
+    data_folder: Path,
+    wheel_names: set[str],
+    trials: set[Decimal],
+    names_to_keep: Optional[set[str]] = None,
+) -> tuple[pd.DataFrame, pd.DataFrame]:
     datachecker = DataConsistencyChecker(
         excluded_keys=('recording_duration', 'recording_date', FREQUENCY_KEY),
     )
@@ -167,22 +113,25 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         regex_to_exclude='.*/_service_event',
     )
 
-    wheel_names: set[str] = {
-        f'{fb_pos}_{side}_wheel_joint'
-        for fb_pos, side in itertools.product(('front', 'rear'), ('left', 'right'))
-    }
-
-    names_to_keep: set[str] = {
-        f'{interface}_interface.{wheel_name}/velocity'
-        for interface, wheel_name in itertools.product(('command', 'state'), wheel_names)
-    }
-
-    bode_df: pd.DataFrame = pd.DataFrame(
-        columns=pd.MultiIndex.from_product([wheel_names, ('gain', 'phase')]),
+    data_df: pd.DataFrame = pd.DataFrame(
+        columns=pd.MultiIndex.from_product([
+            wheel_names,
+            sorted(trials),
+            ('command', 'state'),
+        ],
+            names=['wheel', 'trial (frequency)', 'signal'],
+        ),
+        index=pd.Index([
+            Decimal(idx) / 100
+            for idx in range(int(200/sorted(trials)[0]) + 50)
+        ],
+            name='time',
+        ),
     )
-    bode_df.index.name = 'frequency'
+    data_df.index.name = 'time'
 
-    previous_frequency: Optional[float] = None
+    # TODO: Diagnostics DF
+
     with logging_redirect_tqdm(tqdm_class=tqdm):
         for rosbag_path in tqdm(sorted(data_folder.glob('*')), desc='Bags'):
             logger.info("Processing '%s'", str(rosbag_path.stem))
@@ -195,10 +144,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 assert datachecker.check(custom_metadata), \
                     f"Bag '{rosbag_path.stem}' is inconsistent!"
 
-                frequency = float(custom_metadata[FREQUENCY_KEY])
-                amplitude = float(custom_metadata[AMPLITUDE_KEY])
-                phase_offset = float(custom_metadata[PHASE_OFFSET_KEY])
-                offset = float(custom_metadata[OFFSET_KEY])
+                frequency = Decimal(custom_metadata[FREQUENCY_KEY])
 
                 # NOTE: There is a default as fallback, since first preliminary recording did not
                 #       store this data.
@@ -244,117 +190,273 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 bag_df = statistics_collector.data.copy(True)
                 bag_df.index = bag_df.index - utils.as_time(start_activity_time)
 
-                xdata = bag_df.index.to_numpy(dtype=np.float64)
-                bode_df.loc[frequency] = {
-                    wheel_name: dict.fromkeys(('gain', 'phase'), np.nan)
-                    for wheel_name in wheel_names
-                }
+                # TODO: Could introduce better synchronization by command zero intersection.
 
-                do_plot = plot_frequencies is not None and (
-                    any(np.isclose(frequency, plot_frequencies)) or
-                    previous_frequency is not None and bool(remaining_plot_frequencies) and
-                    previous_frequency < frequency and frequency >= remaining_plot_frequencies[0])
-
-                if do_plot:
-                    remaining_plot_frequencies.pop(0)
-
-                previous_frequency = frequency
+                bag_df.index = [
+                    abs(round(idx, TIME_DECIMAL_PLACES))
+                    if round(idx, TIME_DECIMAL_PLACES).is_zero()
+                    else round(idx, TIME_DECIMAL_PLACES)
+                    for idx in bag_df.index
+                ]
 
                 for wheel_name in wheel_names:
-                    interface_name = f'state_interface.{wheel_name}/velocity'
+                    data_df.loc[:, (wheel_name, frequency, 'state')] = \
+                        bag_df[f'state_interface.{wheel_name}/velocity']
+                    data_df.loc[:, (wheel_name, frequency, 'command')] = \
+                        bag_df[f'command_interface.{wheel_name}/velocity']
 
-                    ydata = bag_df[interface_name].to_numpy(dtype=np.float64)
+    data_df = data_df.dropna(how='all').copy(deep=True)
 
-                    sel_gain = (wheel_name, 'gain')
-                    sel_phase = (wheel_name, 'phase')
+    return data_df, None
 
-                    if bodeplot_phase_method == 'continuous':
-                        initial_phase = (
-                            0.0 if len(bode_df.loc[:, sel_phase]) < 2
-                            else bode_df.loc[:, sel_phase].iat[-2]
-                        )
-                        max_phase = min(initial_phase + np.pi/2, 0)
-                        min_phase = max_phase - 2*np.pi
 
-                        if len(bode_df.loc[:, sel_phase]) < 2:
-                            initial_phase = (max_phase + min_phase)/2
-                    else:
-                        assert bodeplot_phase_method == 'zero'
-                        initial_phase = 0.0
-                        max_phase = np.pi
-                        min_phase = -np.pi
+def fit_bode_data(
+    wheel_names: set[str],
+    param_df: pd.DataFrame,
+    data_df: pd.DataFrame,
+    phase_method,
+    datarange_selector: slice = slice(None),
+    plot_all_frequencies: bool = False,
+    plot_frequencies: Optional[np.ndarray] = None,
+    remaining_plot_frequencies: list[float] = [],
+    wheels_to_plot: str = 'all',
+    debug_frequency_plot: bool = False,
+) -> pd.DataFrame:
 
-                    logger.debug(
-                        "'%s' initial_phase %f [%f, %f] (range %f)",
-                        wheel_name,
-                        initial_phase,
-                        min_phase,
-                        max_phase,
-                        max_phase-min_phase,
+    bode_df = pd.DataFrame(
+        columns=pd.MultiIndex.from_product([sorted(wheel_names), ('gain', 'phase')]),
+        index=param_df.index.copy(deep=True),
+        dtype=np.float64,
+    )
+
+    with logging_redirect_tqdm(tqdm_class=tqdm):
+        previous_frequency: Optional[float] = None
+        for frequency_key in tqdm(param_df.index):
+            assert isinstance(frequency_key, Decimal)
+            frequency = float(frequency_key)
+            amplitude = float(param_df.loc[frequency_key, 'amplitude'])
+            phase_offset = float(param_df.loc[frequency_key, 'phase offset'])
+            offset = float(param_df.loc[frequency_key, 'offset'])
+
+            do_plot = plot_frequencies is not None and (
+                any(np.isclose(frequency, plot_frequencies)) or
+                previous_frequency is not None and bool(remaining_plot_frequencies) and
+                previous_frequency < frequency and frequency >= remaining_plot_frequencies[0])
+
+            if do_plot:
+                remaining_plot_frequencies.pop(0)
+
+            previous_frequency = frequency
+
+            for wheel_name in wheel_names:
+                local_df = cast(pd.DataFrame, data_df[wheel_name][frequency_key].dropna(how='all'))
+
+                xdata = local_df.index.to_numpy(dtype=np.float64)
+                ydata = local_df['state'].to_numpy(dtype=np.float64)
+
+                sel_gain = (wheel_name, 'gain')
+                sel_phase = (wheel_name, 'phase')
+
+                if phase_method == 'continuous':
+                    initial_phase = (
+                        0.0 if len(bode_df.loc[:, sel_phase].dropna()) < 2
+                        else bode_df.loc[:, sel_phase].dropna().iat[-2]
                     )
+                    max_phase = min(initial_phase + np.pi/2, 0)
+                    min_phase = max_phase - 2*np.pi
 
-                    # Filter out nans
-                    xdata_valid = np.isfinite(xdata[datarange_selector])
-                    ydata_valid = np.isfinite(ydata[datarange_selector])
-                    valid_data_mask = xdata_valid & ydata_valid
+                    if len(bode_df.loc[:, sel_phase]) < 2:
+                        initial_phase = (max_phase + min_phase)/2
+                else:
+                    assert phase_method == 'zero'
+                    initial_phase = 0.0
+                    max_phase = np.pi
+                    min_phase = -np.pi
 
-                    if not filter_data:
-                        valid_data_mask[:] = True
+                logger.debug(
+                    "'%s' initial_phase %f [%f, %f] (range %f)",
+                    wheel_name,
+                    initial_phase,
+                    min_phase,
+                    max_phase,
+                    max_phase-min_phase,
+                )
 
-                    # angular_frequency = 2.0 * np.pi * frequency
-                    f = lambda x, gain, phase: (  # noqa: E731
-                        # TODO(SuperJappie08): 20250916 Is phase shift location correct???
-                        gain * amplitude * np.sin(
-                                            frequency * 2.0 * np.pi * x + phase + phase_offset
-                                        ) + offset
-                    )
-                    (gain_scale, phase), _ = curve_fit(
-                        f,
+                # Filter out nans
+                xdata_valid = np.isfinite(xdata[datarange_selector])
+                ydata_valid = np.isfinite(ydata[datarange_selector])
+                valid_data_mask = xdata_valid & ydata_valid
+
+                f = lambda x, gain, phase: (  # noqa: E731
+                    # TODO(SuperJappie08): 20250916 Is phase shift location correct???
+                    gain * amplitude * np.sin(frequency * 2.0 * np.pi * x + phase + phase_offset) \
+                    + offset
+                )
+                (gain_scale, phase), _ = curve_fit(
+                    f,
+                    xdata[datarange_selector][valid_data_mask],
+                    ydata[datarange_selector][valid_data_mask],
+                    np.array([1.0, initial_phase]),
+                    bounds=([0.0, min_phase], [np.inf, max_phase]),
+                    # nan_policy='omit',
+                )
+
+                bode_df.loc[frequency_key, sel_gain] = gain_scale
+                bode_df.loc[frequency_key, sel_phase] = phase
+
+                if (plot_all_frequencies or do_plot) and (
+                        wheels_to_plot == 'all' or wheels_to_plot in wheel_name):
+                    freq_plot_extra_fmt = {}
+                    if debug_frequency_plot:
+                        freq_plot_extra_fmt['marker'] = '.'
+
+                    plt.figure()
+                    plt.suptitle(f'{wheel_name} @ f = {frequency}Hz')
+                    plt.title(f'phase delay = {phase:.03}rad/s, gain = {gain_scale:.03}')
+                    plt.plot(
+                        xdata[datarange_selector][valid_data_mask],
+                        local_df['command'].to_numpy(
+                            dtype=np.float64,
+                        )[datarange_selector][valid_data_mask],
+                        label='command',
+                        **freq_plot_extra_fmt)
+                    plt.plot(
                         xdata[datarange_selector][valid_data_mask],
                         ydata[datarange_selector][valid_data_mask],
-                        np.array([1.0, initial_phase]),
-                        bounds=([0.0, min_phase], [np.inf, max_phase]),
-                    )
+                        label='measurement',
+                        **freq_plot_extra_fmt)
+                    plt.plot(
+                        xdata[datarange_selector][valid_data_mask],
+                        f(xdata[datarange_selector][valid_data_mask], gain_scale, phase),
+                        label='fit',
+                        **freq_plot_extra_fmt)
+                    plt.xticks(xdata[slice(
+                        datarange_selector.start,
+                        datarange_selector.stop,
+                        100,
+                    )])
+                    plt.xlabel('Time (s)')
+                    plt.ylabel('speed (rad/s)')
+                    plt.legend()
+                    plot_utils.connect_mpl_keyboard_handler(plt.gcf())
+                    plt.show(block=False)
 
-                    bode_df.loc[frequency, sel_gain] = gain_scale
-                    bode_df.loc[frequency, sel_phase] = phase
+    return bode_df
 
-                    if (plot_all_frequencies or do_plot) and (
-                            wheels_to_plot == 'all' or wheels_to_plot in wheel_name):
-                        freq_plot_extra_fmt = {}
-                        if debug_frequency_plot:
-                            freq_plot_extra_fmt['marker'] = '.'
 
-                        plt.figure()
-                        plt.suptitle(f'{wheel_name} @ f = {frequency}Hz')
-                        plt.title(f'phase delay = {phase:.03}rad/s, gain = {gain_scale:.03}')
-                        plt.plot(
-                            xdata[datarange_selector],
-                            bag_df[f'command_interface.{wheel_name}/velocity'].to_numpy(
-                                dtype=np.float64,
-                            )[datarange_selector],
-                            label='command',
-                            **freq_plot_extra_fmt)
-                        plt.plot(
-                            xdata[datarange_selector],
-                            ydata[datarange_selector],
-                            label='measurement',
-                            **freq_plot_extra_fmt)
-                        plt.plot(
-                            xdata[datarange_selector],
-                            f(xdata[datarange_selector], gain_scale, phase),
-                            label='fit',
-                            **freq_plot_extra_fmt)
-                        plt.xticks(xdata[slice(
-                            datarange_selector.start,
-                            datarange_selector.stop,
-                            100,
-                        )])
-                        plt.xlabel('Time (s)')
-                        plt.ylabel('speed (rad/s)')
-                        plt.legend()
-                        plot_utils.connect_mpl_keyboard_handler(plt.gcf())
-                        plt.show(block=False)
+# TODO(SuperJappie08): After the refactor the plots changed a bit for some reason?
+def main(args: Optional[Sequence[str]] = None) -> int:
+    logging.basicConfig(level=logging.INFO)
+    parser = argparse.ArgumentParser(
+        'bodeplotter',
+        description='Use on a folder of created data to make a bodeplot')
+    parser.add_argument(
+        'folder',
+        type=Path, metavar='FOLDER',
+        help='The folder containing the rosbags')
+    parser.add_argument(
+        '-S', '--skip-samples',
+        type=arguments.positive_int, required=False,
+        help='Amount of samples to skip at the beginning and end. Can be omitted to use all data')
+
+    plot_frequency_group = parser.add_argument_group('Frequency plot configuration')
+    plot_frequency_select_group = plot_frequency_group.add_mutually_exclusive_group()
+    plot_frequency_select_group.add_argument(
+        '-f', '--plot-frequency',
+        action='append', nargs='*',
+        type=float, required=False,
+        help='The frequencies of the trails to plot separately.')
+    plot_frequency_select_group.add_argument(
+        '-F', '--plot-all-frequencies', action='store_true',
+        help='Plot the graphs at all frequencies.')
+    plot_frequency_group.add_argument(
+        '-w', '--plot-wheel',
+        action='store', default='front_left',
+        type=str, required=False,
+        help=('Which wheels to plot the supplied frequencies for. '
+              "'all' to plot all. Default is 'front_left'"))
+    plot_frequency_group.add_argument(
+        '-df', '--debug-frequency',
+        action='store_true', required=False,
+        help='Debug frequency plot style')
+
+    bode_plot_group = parser.add_argument_group('Bode plot style')
+    bode_plot_group.add_argument(
+        '-m', '--magnitude-unit',
+        choices=['dB', 'log'], default='dB',
+        help='The units of the magnitude axis')
+    bode_plot_group.add_argument(
+        '-p', '--phase-unit',
+        choices=['degrees', 'rad'], default='degrees',
+        help='The units of the phase axis')
+    bode_plot_group.add_argument(
+        '--phase-method',
+        choices=['zero', 'continuous'], default='zero',
+        help='How the phase is constraint during the calculations')
+
+    parsed_args = parser.parse_args(args)
+
+    datarange_selector = slice(
+        parsed_args.skip_samples,
+        -parsed_args.skip_samples if isinstance(parsed_args.skip_samples, int) else None,
+    )
+
+    # Frequency plot options
+    plot_all_frequencies = parsed_args.plot_all_frequencies
+    plot_frequencies = None
+    remaining_plot_frequencies: list[float] = []
+    if parsed_args.plot_frequency:
+        plot_frequencies = np.asarray(
+            sorted(itertools.chain.from_iterable(parsed_args.plot_frequency)), dtype=np.float64)
+        remaining_plot_frequencies.extend(plot_frequencies.tolist())
+    wheels_to_plot = parsed_args.plot_wheel
+    debug_frequency_plot = parsed_args.debug_frequency
+
+    # Bode Plot Settings
+    bodeplot_gain_scale: Literal['dB'] | Literal['log'] = parsed_args.magnitude_unit
+    bodeplot_phase_scale: Literal['rad'] | Literal['degrees'] = parsed_args.phase_unit
+
+    bodeplot_phase_method: Literal['zero'] | Literal['continuous'] = parsed_args.phase_method
+
+    # Data settings
+    data_folder: Path = cast(Path, parsed_args.folder).absolute()
+
+    assert data_folder.is_dir(), "The specified 'FOLDER' must be a folder containing rosbags"
+
+    wheel_names: set[str] = {
+        f'{fb_pos}_{side}_wheel_joint'
+        for fb_pos, side in itertools.product(('front', 'rear'), ('left', 'right'))
+    }
+
+    names_to_keep: set[str] = {
+        f'{interface}_interface.{wheel_name}/velocity'
+        for interface, wheel_name in itertools.product(('command', 'state'), wheel_names)
+    }
+
+    max_trial, trials, param_df = get_trial_data(data_folder)
+
+    data_df, diagnostics_data_df = create_dataframes(
+        data_folder=data_folder,
+        wheel_names=wheel_names,
+        trials=set(trials),
+        names_to_keep=names_to_keep,
+    )
+
+    bode_df = fit_bode_data(
+        wheel_names=wheel_names,
+        param_df=param_df,
+        data_df=data_df,
+        phase_method=bodeplot_phase_method,
+        #
+        datarange_selector=datarange_selector,
+        plot_all_frequencies=plot_all_frequencies,
+        plot_frequencies=plot_frequencies,
+        remaining_plot_frequencies=remaining_plot_frequencies,
+        wheels_to_plot=wheels_to_plot,
+        debug_frequency_plot=debug_frequency_plot,
+    )
+
+    logger.info(f'\n{bode_df}')
 
     # FIXME: ADD DATA EXPORT MODES (So make plot, save plot, save data)
     for idx, wheel_name in enumerate(wheel_names):
@@ -365,6 +467,8 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
         fig.suptitle(f'{title_wheel_name} - Bode Plot')
 
+        frequency_axis = bode_df.index.to_numpy(dtype=np.float64)
+
         # ax_gain.set_title('Magnitude Gain')
         ax_gain.set_xscale('log')
         ax_gain.grid(True, axis='both', which='both')
@@ -373,16 +477,16 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 ax_gain.set_yscale('log')
                 ax_gain.set_ylabel('Magnitude Gain [-]')
                 ax_gain.plot(
-                    bode_df.index.to_numpy(),
-                    bode_df.loc[:, (wheel_name, 'gain')].to_numpy(),
+                    frequency_axis,
+                    bode_df.loc[:, (wheel_name, 'gain')].to_numpy(dtype=np.float64),
                     '-o',
                 )
             case 'dB':
                 ax_gain.set_yscale('linear')
                 ax_gain.set_ylabel('Magnitude Gain [dB]')
                 ax_gain.plot(
-                    bode_df.index.to_numpy(),
-                    gain2dB(bode_df.loc[:, (wheel_name, 'gain')].to_numpy()),
+                    frequency_axis,
+                    gain2dB(bode_df.loc[:, (wheel_name, 'gain')].to_numpy(dtype=np.float64)),
                     '-o',
                 )
             case _:
@@ -396,12 +500,16 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         match bodeplot_phase_scale:
             case 'rad':
                 ax_phase.set_ylabel('Phase [rad]')
-                ax_phase.plot(bode_df.index, bode_df.loc[:, (wheel_name, 'phase')], '-o')
+                ax_phase.plot(
+                    frequency_axis,
+                    bode_df.loc[:, (wheel_name, 'phase')].to_numpy(dtype=np.float64),
+                    '-o',
+                )
             case 'degrees':
                 ax_phase.set_ylabel('Phase [degrees]')
                 ax_phase.plot(
-                    bode_df.index,
-                    np.rad2deg(bode_df.loc[:, (wheel_name, 'phase')]),
+                    frequency_axis,
+                    np.rad2deg(bode_df.loc[:, (wheel_name, 'phase')].to_numpy(dtype=np.float64)),
                     '-o',
                 )
             case _:

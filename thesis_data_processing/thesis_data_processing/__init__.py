@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from . import arguments
 from . import conversions
 from . import plot_utils
 from . import utils
@@ -29,6 +30,7 @@ __all__ = [
     'DiagnosticsCollector',
     'SYSTEM_DIAGNOSTIC_NAME_MAPPING',
     'StatisticsCollector',
+    'arguments',
     'conversions',
     'open_rosbag',
     'plot_utils',
