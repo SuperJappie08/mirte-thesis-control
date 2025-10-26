@@ -17,7 +17,7 @@ setup(
     maintainer_email='36795178+SuperJappie08@users.noreply.github.com',
     description='TODO: Package description',
     license='Apache-2.0',
-    tests_require=['pytest'],
+    extras_require={'test': ['pytest']},
     entry_points={
         'console_scripts': [
             f'bodeplotter = {package_name}.bodeplot:main',
