@@ -192,12 +192,10 @@ def create_dataframes(
                 # NOTE(SuperJappie08): Rounding time does not work for this measurement.
                 #                      It is also not necessary.
 
-                append_df = pd.DataFrame(
-                    columns=pd.MultiIndex.from_product(
-                        [sorted(wheel_names), (frequency,), ('command', 'state')],
-                        names=data_df.columns.names.copy(),
-                    ),
-                    index=bag_df.index.copy(),
+                append_df = utils.create_empty_append_df(
+                    column_iterable=[sorted(wheel_names), (frequency,), ('command', 'state')],
+                    target_df=data_df,
+                    source_df=bag_df,
                     dtype=np.float64,
                 )
 
@@ -207,22 +205,11 @@ def create_dataframes(
                     append_df.loc[:, (wheel_name, frequency, 'command')] = \
                         bag_df[f'command_interface.{wheel_name}/velocity']
 
-                overlapping_idxs = np.isin(bag_df.index, data_df.index)
-                data_df = pd.concat((data_df, append_df.loc[~overlapping_idxs]),
-                                    verify_integrity=True, sort=True, copy=True)
-
-                if overlapping_idxs.any():
-                    time_selector_dst = data_df.index.array[
-                        np.isin(data_df.index, bag_df.index[overlapping_idxs])]
-                    time_selector_src = append_df.index.array[overlapping_idxs]
-                    for wheel_name in wheel_names:
-                        data_df.loc[time_selector_dst, (wheel_name, frequency, 'state')] = \
-                            append_df.loc[time_selector_src, (wheel_name, frequency, 'state')]
-                        data_df.loc[time_selector_dst, (wheel_name, frequency, 'command')] = \
-                            append_df.loc[time_selector_src, (wheel_name, frequency, 'command')]
-
-                assert data_df.loc[append_df.index, (slice(None), frequency, slice(None))]\
-                    .equals(append_df)
+                data_df = utils.append_df(
+                    target_df=data_df,
+                    append_df=append_df,
+                    selector=(slice(None), frequency, slice(None)),
+                )
 
     data_df = data_df.dropna(how='all').copy(deep=True)
 

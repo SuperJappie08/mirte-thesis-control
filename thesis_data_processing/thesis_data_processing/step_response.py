@@ -19,11 +19,11 @@ from decimal import Decimal
 import itertools
 import math
 from pathlib import Path
-from pprint import pprint
+from pprint import pprint  # noqa: F401
 from typing import cast, Optional, TYPE_CHECKING
 
 import matplotlib.pyplot as plt
-import numpy as np  # noqa: F401
+import numpy as np
 import pandas as pd
 from rosbag2_py import StorageFilter
 from rosbag2_py import StorageOptions
@@ -65,22 +65,43 @@ DATE_LENGTH: int = 8
 STEP_COMMAND_KEY = 'step.step_command'
 T_STEP_KEY = 'step.t_step'
 INITIAL_COMMAND_KEY = 'step.initial_commmand'
+RECORDING_DURATION_KEY = 'recording_duration'
+
+MIRTE_HW_ID = 'Mirte-867B16'
+
+AVG_CPU_LOAD_COL = f'{MIRTE_HW_ID}.cpu-monitor.CPU Load Average'
+AVG_RAM_LOAD_COL = f'{MIRTE_HW_ID}.ram-monitor.RAM Load Average'
 
 
-def get_trial_data(data_folder: Path) -> tuple[int, list[Decimal]]:
+def get_trial_data(data_folder: Path) -> tuple[int, list[Decimal], pd.DataFrame]:
     logger.info("Checking which trials are run in '%s'", data_folder)
+
+    param_df = pd.DataFrame(columns=['t_step', 'initial_command', 'recording_duration'])
+    param_df.index.name = 'step_command'
 
     trials: dict[Decimal, int] = {}
     for rosbag_path in tqdm(sorted(data_folder.glob('*')), desc='Bags'):
         with open_rosbag(StorageOptions(uri=str(rosbag_path))) as reader:
             step_command = Decimal(reader.get_metadata().custom_data[STEP_COMMAND_KEY])
+
+            param_df.loc[step_command, 't_step'] = \
+                Decimal(reader.get_metadata().custom_data[T_STEP_KEY])
+            param_df.loc[step_command, 'initial_command'] = \
+                Decimal(reader.get_metadata().custom_data[INITIAL_COMMAND_KEY])
+
+            recording_duration = reader.get_metadata().custom_data.get(RECORDING_DURATION_KEY)
+            param_df.loc[step_command, 'recording_duration'] = \
+                Decimal(recording_duration) if recording_duration is not None else None
+
             trials[step_command] = trials.get(step_command, 0) + 1
 
     assert len(set(trials.values())) == 1, 'All trials should be run an equal amount of times'
     max_trials = set(trials.values()).pop()
     trial_idxs = list(trials.keys())
 
-    return max_trials, trial_idxs
+    param_df = param_df.sort_index().copy(deep=True)
+
+    return max_trials, trial_idxs, param_df
 
 
 def create_dataframes(
@@ -196,7 +217,7 @@ def create_dataframes(
                         accepting_data or topic.endswith('/names')
                     ):
                         statistics_collector.process_msg(topic, msg, try_process=False)
-                    elif accepting_data and topic == '/diagnostics':
+                    elif topic == '/diagnostics':
                         diagnostics_collector.process_msg(msg, try_process=False)
 
                 assert start_activity_time is not None
@@ -254,20 +275,28 @@ def create_dataframes(
                         columns=pd.MultiIndex.from_product([
                             sorted(trials),
                             tuple(range(max_trials)),
-                            diagnostics_df.columns.array,
+                            diagnostics_df.columns.array.copy(),
                         ],
                             names=['step size', 'trial number', 'data'],
                         ),
-                        index=pd.Index([
-                                Decimal(idx) / 100
-                                for idx in range(int(data_df.index[-1] * 100) + 50)
-                            ],
-                            name='time',
-                        ),
+                        index=pd.Index([], name='time'),
                     )
 
+                diagnostics_append_df = utils.create_empty_append_df(
+                    column_iterable=[(step_command,), (trial_number,), diagnostics_df.columns],
+                    target_df=diagnostics_data_df,
+                    source_df=diagnostics_df,
+                )
+
                 for column in diagnostics_df.columns:
-                    diagnostics_data_df.loc[:, (*trial_selector, column)] = diagnostics_df[column]
+                    diagnostics_append_df.loc[:, (*trial_selector, column)] = \
+                        diagnostics_df[column]
+
+                diagnostics_data_df = utils.append_df(
+                    target_df=diagnostics_data_df,
+                    append_df=diagnostics_append_df,
+                    selector=(*trial_selector, slice(None)),
+                )
 
                 assert diagnostics_df.count().sum() == \
                     diagnostics_data_df.loc[:, (*trial_selector, slice(None))].count().sum()
@@ -280,6 +309,68 @@ def create_dataframes(
     return data_df, diagnostics_data_df
 
 
+# TODO: Take Y bounds as arguments
+# TODO: Optional RAM
+def plot_system_usage(param_df: pd.DataFrame, diagnostics_data_df: pd.DataFrame) -> None:
+    for step_command in param_df.index.array:
+        local_df = cast(pd.DataFrame, diagnostics_data_df[step_command]).dropna(how='all')
+
+        t_step = cast(Decimal, param_df.loc[step_command, 't_step'])
+        recording_duration = cast(Decimal, param_df.loc[step_command, 'recording_duration'])
+
+        fig, [ax_cpu, ax_ram] = plt.subplots(2, sharex=True)
+        assert isinstance(ax_cpu, plt.Axes)
+        assert isinstance(ax_ram, plt.Axes)
+
+        # CPU
+        ax_cpu.set_title('Average CPU Load')
+
+        ax_cpu.axvline(t_step, label='Step event', color='grey', linestyle='--')
+
+        for trial_idx in local_df.columns.unique(0):
+            local_cpu_series = cast(pd.Series, local_df[trial_idx][AVG_CPU_LOAD_COL])\
+                .dropna(how='all')
+            if local_cpu_series.index.array[-1] < recording_duration:
+                local_cpu_series[recording_duration] = local_cpu_series.iloc[-1]
+            ax_cpu.step(
+                local_cpu_series.index,
+                local_cpu_series.astype(np.float64),
+                label=f'Trial {trial_idx + 1}',
+                where='post',
+            )
+
+        ax_cpu.set_ylabel('CPU Load Average (%)')
+        # ax_cpu.set_ylim(0, 100)
+        # ax_cpu.tick_params('x', labelbottom=True)
+
+        # RAM
+        ax_ram.set_title('Average RAM Load')
+
+        ax_ram.axvline(t_step, label='Step event', color='grey', linestyle='--')
+
+        for trial_idx in local_df.columns.unique(0):
+            local_ram_series = cast(pd.Series, local_df[trial_idx][AVG_RAM_LOAD_COL])\
+                .dropna(how='all')
+            if local_ram_series.index.array[-1] < recording_duration:
+                local_ram_series[recording_duration] = local_ram_series.iloc[-1]
+            ax_ram.step(
+                local_ram_series.index,
+                local_ram_series.astype(np.float64),
+                label=f'Trial {trial_idx + 1}',
+                where='post',
+            )
+
+        ax_ram.set_ylabel('RAM Load Average (%)')
+        # ax_ram.set_ylim(0, 100)
+        ax_ram.set_xlabel('Time (s)')
+
+        plt.suptitle(f'System usage - step size {step_command:01}')
+
+        plot_utils.deduped_figure_legend(fig, loc='center right')
+        plot_utils.connect_mpl_keyboard_handler(fig)
+        plt.show(block=False)
+
+
 def main(args: Optional[Sequence[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
@@ -290,9 +381,18 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         type=Path, metavar='FOLDER',
         help='The folder containing the rosbags')
 
+    plot_system_usage_group = parser.add_argument_group('Plot System Usage')
+    plot_system_usage_group.add_argument(
+        '-U', '--plot-system-usage',
+        action='store_true', required=False,
+        help='Enable system usage plots')
+
     parsed_args = parser.parse_args(args)
 
     # Process arguments
+
+    # Plotting arguments
+    do_plot_system_usage: bool = parsed_args.plot_system_usage
 
     # Data settings
     data_folder: Path = cast(Path, parsed_args.folder).expanduser().absolute()
@@ -316,7 +416,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
     names_to_keep: set[str] = state_interfaces | command_interfaces
 
-    max_trial, trials = get_trial_data(data_folder)
+    max_trial, trials, param_df = get_trial_data(data_folder)
 
     diagnostics_name_mapping = {}
     diagnostics_name_mapping.update(CONTROLLER_MANAGER_DIAGNOSTIC_NAME_MAPPING)
@@ -331,6 +431,17 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         names_to_keep=names_to_keep,
         diagnostics_name_mapping=diagnostics_name_mapping,
     )
+
+    if do_plot_system_usage:
+        if np.isin(
+            diagnostics_data_df.columns.unique('data').array,
+            [AVG_CPU_LOAD_COL, AVG_RAM_LOAD_COL],
+        ).sum() == 2:
+            logger.info('Plotting system usage data')
+            plot_system_usage(param_df=param_df, diagnostics_data_df=diagnostics_data_df)
+        else:
+            logger.error('Plotting of system usage data was requested, '
+                         'however data is missing. SKIPPING!')
 
     for (step_command, wheel_name) in itertools.product(trials, wheel_names):
         logger.info('%s %s', wheel_name, step_command)
@@ -381,9 +492,13 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     )
 
     assert len(data_dict) == 8*len(data_dict_unique_sorted), 'Unequally Missing data'
-    pprint(data_dict_unique_sorted, width=120)
+    # pprint(data_dict_unique_sorted, width=120)
 
     # TODO(SuperJappie08): Do something with the data, it is all there, it is packed a bit weird.
-    pprint(sorted((index, row.count()) for (index, row) in diagnostics_data_df.items()), width=160)
+    if False:
+        pprint(
+            sorted((index, row.count()) for (index, row) in diagnostics_data_df.items()),
+            width=160,
+        )
 
     raise NotImplementedError()

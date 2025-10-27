@@ -15,7 +15,12 @@
 from decimal import Decimal
 from typing import TYPE_CHECKING
 
+import numpy as np
+import pandas as pd
+
 if TYPE_CHECKING:
+    from collections.abc import Iterable
+
     from builtin_interfaces.msg import Time
 
 # LIFECYCLE_ACTIVE_ID is hard-coded, but if the messages are available, it will be verified.
@@ -30,3 +35,46 @@ except ImportError:
 
 def as_time(stamp: 'Time') -> Decimal:
     return Decimal(f'{stamp.sec}.{stamp.nanosec:0>9}')
+
+
+def create_empty_append_df(
+    *,
+    column_iterable: 'Iterable',
+    target_df: pd.DataFrame,
+    source_df: pd.DataFrame,
+    **kwargs,
+) -> pd.DataFrame:
+    return pd.DataFrame(
+        columns=pd.MultiIndex.from_product(
+            column_iterable,
+            names=target_df.columns.names.copy(),
+        ),
+        index=source_df.index.copy(),
+        **kwargs,
+    )
+
+
+def append_df(
+    *,
+    target_df: pd.DataFrame,
+    append_df: pd.DataFrame,
+    selector: tuple,
+) -> pd.DataFrame:
+    overlapping_idxs = np.isin(append_df.index, target_df.index)
+    target_df = pd.concat(
+        (target_df, append_df.loc[~overlapping_idxs]),
+        verify_integrity=True,
+        sort=True,
+        copy=True,
+    ).sort_index()
+
+    if overlapping_idxs.any():
+        time_selector_dst = target_df.index.array[
+                        np.isin(target_df.index, append_df.index[overlapping_idxs])]
+        time_selector_src = append_df.index.array[overlapping_idxs]
+        target_df.loc[time_selector_dst, selector] = \
+            append_df.loc[time_selector_src, selector]
+
+    assert target_df.loc[append_df.index, selector].equals(append_df)
+
+    return target_df
