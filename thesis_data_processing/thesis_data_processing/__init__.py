@@ -16,6 +16,7 @@ from . import arguments
 from . import conversions
 from . import plot_utils
 from . import utils
+from .config_writer import create_config
 from .data_consistency_checker import DataConsistencyChecker
 from .diagnostics_collector import CONTROLLER_MANAGER_DIAGNOSTIC_NAME_MAPPING
 from .diagnostics_collector import DiagnosticsCollector
@@ -34,6 +35,7 @@ __all__ = [
     'StatisticsCollector',
     'arguments',
     'conversions',
+    'create_config',
     'open_rosbag',
     'plot_utils',
     'read_messages',

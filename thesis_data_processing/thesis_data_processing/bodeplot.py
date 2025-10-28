@@ -46,6 +46,7 @@ except ImportError:
     import logging
 
 from . import arguments
+from . import create_config
 from . import DataConsistencyChecker
 from . import open_rosbag
 from . import PlotOutputManager
@@ -433,13 +434,14 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     data_folder: Path = cast(Path, parsed_args.folder).absolute()
 
     assert data_folder.is_dir(), "The specified 'FOLDER' must be a folder containing rosbags"
-    plt_mgr /= data_folder.name
+    plt_mgr /= data_folder.name[:-(utils.FULL_DATETIME_LENGTH + 1)]
 
     if plt_mgr.save_path is not None:
-        plt_mgr.save_path.mkdir(parents=True, exist_ok=True)
-        with (plt_mgr.save_path / 'config').open('w') as f:
-            f.write(f'datapath={data_folder}\n')
-            f.write(f'{parsed_args!r}\n')
+        create_config(
+            basepath=plt_mgr.save_path,
+            data_folder=data_folder,
+            args=parsed_args,
+        )
 
     wheel_names: set[str] = {
         f'{fb_pos}_{side}_wheel_joint'

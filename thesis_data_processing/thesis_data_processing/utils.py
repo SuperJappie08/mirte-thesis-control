@@ -32,6 +32,10 @@ try:
 except ImportError:
     pass
 
+TIMESTAMP_LENGTH: int = 6
+DATE_LENGTH: int = 8
+FULL_DATETIME_LENGTH: int = TIMESTAMP_LENGTH + 1 + DATE_LENGTH
+
 
 def as_time(stamp: 'Time') -> Decimal:
     return Decimal(f'{stamp.sec}.{stamp.nanosec:0>9}')
