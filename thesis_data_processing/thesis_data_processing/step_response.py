@@ -312,6 +312,11 @@ def create_dataframes(
 # TODO: Take Y bounds as arguments
 # TODO: Optional RAM
 def plot_system_usage(param_df: pd.DataFrame, diagnostics_data_df: pd.DataFrame) -> None:
+    PLOT_STEP_KWARGS = {
+        'where': 'mid',
+        'marker': '.',
+    }
+
     for step_command in param_df.index.array:
         local_df = cast(pd.DataFrame, diagnostics_data_df[step_command]).dropna(how='all')
 
@@ -330,13 +335,15 @@ def plot_system_usage(param_df: pd.DataFrame, diagnostics_data_df: pd.DataFrame)
         for trial_idx in local_df.columns.unique(0):
             local_cpu_series = cast(pd.Series, local_df[trial_idx][AVG_CPU_LOAD_COL])\
                 .dropna(how='all')
+            if local_cpu_series.index.array[0] < Decimal('0'):
+                local_cpu_series.index.array[0] = Decimal('0')
             if local_cpu_series.index.array[-1] < recording_duration:
                 local_cpu_series[recording_duration] = local_cpu_series.iloc[-1]
             ax_cpu.step(
                 local_cpu_series.index,
                 local_cpu_series.astype(np.float64),
                 label=f'Trial {trial_idx + 1}',
-                where='post',
+                **PLOT_STEP_KWARGS,
             )
 
         ax_cpu.set_ylabel('CPU Load Average (%)')
@@ -351,13 +358,15 @@ def plot_system_usage(param_df: pd.DataFrame, diagnostics_data_df: pd.DataFrame)
         for trial_idx in local_df.columns.unique(0):
             local_ram_series = cast(pd.Series, local_df[trial_idx][AVG_RAM_LOAD_COL])\
                 .dropna(how='all')
+            if local_ram_series.index.array[0] < Decimal('0'):
+                local_ram_series.index.array[0] = Decimal('0')
             if local_ram_series.index.array[-1] < recording_duration:
                 local_ram_series[recording_duration] = local_ram_series.iloc[-1]
             ax_ram.step(
                 local_ram_series.index,
                 local_ram_series.astype(np.float64),
                 label=f'Trial {trial_idx + 1}',
-                where='post',
+                **PLOT_STEP_KWARGS,
             )
 
         ax_ram.set_ylabel('RAM Load Average (%)')
