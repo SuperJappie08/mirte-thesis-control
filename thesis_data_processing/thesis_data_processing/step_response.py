@@ -30,11 +30,13 @@ from rosbag2_py import StorageOptions
 from tqdm.auto import tqdm
 from tqdm.contrib.logging import logging_redirect_tqdm
 
+from . import arguments
 from . import CONTROLLER_MANAGER_DIAGNOSTIC_NAME_MAPPING
 from . import DataConsistencyChecker
 from . import DiagnosticsCollector
 from . import open_rosbag
 from . import plot_utils
+from . import PlotOutputManager
 from . import read_messages
 from . import StatisticsCollector
 from . import SYSTEM_DIAGNOSTIC_NAME_MAPPING
@@ -311,7 +313,11 @@ def create_dataframes(
 
 # TODO: Take Y bounds as arguments
 # TODO: Optional RAM
-def plot_system_usage(param_df: pd.DataFrame, diagnostics_data_df: pd.DataFrame) -> None:
+def plot_system_usage(
+    param_df: pd.DataFrame,
+    diagnostics_data_df: pd.DataFrame,
+    plt_mgr: PlotOutputManager = PlotOutputManager(),
+) -> None:
     PLOT_STEP_KWARGS = {
         'where': 'mid',
         'marker': '.',
@@ -376,8 +382,8 @@ def plot_system_usage(param_df: pd.DataFrame, diagnostics_data_df: pd.DataFrame)
         plt.suptitle(f'System usage - step size {step_command:01}')
 
         plot_utils.deduped_figure_legend(fig, loc='center right')
-        plot_utils.connect_mpl_keyboard_handler(fig)
-        plt.show(block=False)
+        figure_name = f'system-cpu-ram-{step_command}'
+        plt_mgr.output(fig, fname=figure_name, block=False)
 
 
 def main(args: Optional[Sequence[str]] = None) -> int:
@@ -396,9 +402,12 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         action='store_true', required=False,
         help='Enable system usage plots')
 
+    arguments.add_global_plotting_arguments(parser)
+
     parsed_args = parser.parse_args(args)
 
     # Process arguments
+    plt_mgr = PlotOutputManager(parsed_args.save_plots)
 
     # Plotting arguments
     do_plot_system_usage: bool = parsed_args.plot_system_usage
@@ -407,6 +416,13 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     data_folder: Path = cast(Path, parsed_args.folder).expanduser().absolute()
 
     assert data_folder.is_dir(), "The specified 'FOLDER' must be a folder containing rosbags"
+    plt_mgr /= data_folder.name
+
+    if plt_mgr.save_path is not None:
+        plt_mgr.save_path.mkdir(parents=True, exist_ok=True)
+        with (plt_mgr.save_path / 'config').open('w') as f:
+            f.write(f'datapath={data_folder}\n')
+            f.write(f'{parsed_args!r}\n')
 
     wheel_names: set[str] = {
         f'{fb_pos}_{side}_wheel_joint'
@@ -447,14 +463,18 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             [AVG_CPU_LOAD_COL, AVG_RAM_LOAD_COL],
         ).sum() == 2:
             logger.info('Plotting system usage data')
-            plot_system_usage(param_df=param_df, diagnostics_data_df=diagnostics_data_df)
+            plot_system_usage(
+                param_df=param_df,
+                diagnostics_data_df=diagnostics_data_df,
+                plt_mgr=plt_mgr / 'diagnostics',
+            )
         else:
             logger.error('Plotting of system usage data was requested, '
                          'however data is missing. SKIPPING!')
 
     for (step_command, wheel_name) in itertools.product(trials, wheel_names):
         logger.info('%s %s', wheel_name, step_command)
-        trials_df: pd.DataFrame = data_df.loc[:, (wheel_name, step_command)]
+        trials_df: pd.DataFrame = data_df[wheel_name][step_command]
 
         # NOTE: Make a custom figure to enable plotting the command first
         fig, ax = plt.subplots()
@@ -480,10 +500,10 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         plt.suptitle(wheel_name)
         plt.title(step_command)
 
-        plot_utils.connect_mpl_keyboard_handler(fig)
-        plt.show(block=False)
+        figure_name = f'{wheel_name.replace("_", "-")}-{step_command}'
+        plt_mgr.output(fig, fname=figure_name, block=False)
 
-    plt.show()
+    plt_mgr.show_all()
 
     # NOTE(SuperJappie08): Some data is missing, but it is not critical for this measurement
     data_dict = {

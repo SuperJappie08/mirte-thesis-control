@@ -20,6 +20,7 @@ from .data_consistency_checker import DataConsistencyChecker
 from .diagnostics_collector import CONTROLLER_MANAGER_DIAGNOSTIC_NAME_MAPPING
 from .diagnostics_collector import DiagnosticsCollector
 from .diagnostics_collector import SYSTEM_DIAGNOSTIC_NAME_MAPPING
+from .plot_utils import PlotOutputManager
 from .rosbag_reader_utils import open_rosbag
 from .rosbag_reader_utils import read_messages
 from .statistics_collector import StatisticsCollector
@@ -28,6 +29,7 @@ __all__ = [
     'CONTROLLER_MANAGER_DIAGNOSTIC_NAME_MAPPING',
     'DataConsistencyChecker',
     'DiagnosticsCollector',
+    'PlotOutputManager',
     'SYSTEM_DIAGNOSTIC_NAME_MAPPING',
     'StatisticsCollector',
     'arguments',

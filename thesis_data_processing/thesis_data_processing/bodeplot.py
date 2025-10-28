@@ -48,7 +48,7 @@ except ImportError:
 from . import arguments
 from . import DataConsistencyChecker
 from . import open_rosbag
-from . import plot_utils
+from . import PlotOutputManager
 from . import read_messages
 from . import StatisticsCollector
 from . import utils
@@ -222,6 +222,7 @@ def fit_bode_data(
     data_df: pd.DataFrame,
     phase_method,
     datarange_selector: slice = slice(None),
+    plt_mgr: PlotOutputManager = PlotOutputManager(),
     plot_all_frequencies: bool = False,
     plot_frequencies: Optional[np.ndarray] = None,
     remaining_plot_frequencies: list[float] = [],
@@ -337,8 +338,9 @@ def fit_bode_data(
                     plt.xlabel('Time (s)')
                     plt.ylabel('speed (rad/s)')
                     plt.legend()
-                    plot_utils.connect_mpl_keyboard_handler(fig)
-                    plt.show(block=False)
+
+                    figure_name = f'{wheel_name.replace("_", "-")}-{frequency_key}'
+                    plt_mgr.output(fig, fname=figure_name, block=False)
 
     return bode_df
 
@@ -398,7 +400,11 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         choices=['zero', 'continuous'], default='zero',
         help='How the phase is constraint during the calculations')
 
+    arguments.add_global_plotting_arguments(parser)
+
     parsed_args = parser.parse_args(args)
+
+    plt_mgr = PlotOutputManager(parsed_args.save_plots)
 
     datarange_selector = slice(
         parsed_args.skip_samples,
@@ -427,6 +433,13 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     data_folder: Path = cast(Path, parsed_args.folder).absolute()
 
     assert data_folder.is_dir(), "The specified 'FOLDER' must be a folder containing rosbags"
+    plt_mgr /= data_folder.name
+
+    if plt_mgr.save_path is not None:
+        plt_mgr.save_path.mkdir(parents=True, exist_ok=True)
+        with (plt_mgr.save_path / 'config').open('w') as f:
+            f.write(f'datapath={data_folder}\n')
+            f.write(f'{parsed_args!r}\n')
 
     wheel_names: set[str] = {
         f'{fb_pos}_{side}_wheel_joint'
@@ -454,6 +467,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         phase_method=bodeplot_phase_method,
         datarange_selector=datarange_selector,
         # Plotting parameters
+        plt_mgr=plt_mgr / 'fit',
         plot_all_frequencies=plot_all_frequencies,
         plot_frequencies=plot_frequencies,
         remaining_plot_frequencies=remaining_plot_frequencies,
@@ -525,7 +539,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             case _:
                 raise ValueError('Unknown plot Phase scale')
 
-        plot_utils.connect_mpl_keyboard_handler(fig)
-        plt.show(block=(idx + 1 == len(wheel_names)))
+        figure_name = f'bode-{title_wheel_name.replace(" ", "-")}'
+        plt_mgr.output(fig, fname=figure_name, block=(idx + 1 == len(wheel_names)))
 
     raise NotImplementedError()

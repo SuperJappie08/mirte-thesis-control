@@ -13,6 +13,7 @@
 # limitations under the License.
 
 import argparse
+from pathlib import Path
 
 
 def positive_int(value: str) -> int:
@@ -20,3 +21,12 @@ def positive_int(value: str) -> int:
     if n <= 0:
         raise argparse.ArgumentTypeError(f'{n} is not a positive integer. Must be larger than 0')
     return n
+
+
+def add_global_plotting_arguments(parser: argparse.ArgumentParser):
+    parser.add_argument(
+        '--save-plots',
+        action='store', required=False,
+        type=Path, metavar='DEST_FOLDER',
+        help='Path to save plots to. (Only saving when supplied)',
+    )

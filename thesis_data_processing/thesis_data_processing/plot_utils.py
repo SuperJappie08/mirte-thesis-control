@@ -13,16 +13,19 @@
 # limitations under the License.
 
 from collections import OrderedDict
-from typing import TYPE_CHECKING
+from pathlib import Path
+from typing import Optional, Self, TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 
 if TYPE_CHECKING:
+    from types import ModuleType
     from typing import TypeAlias
 
     from matplotlib.axes import Axes
     from matplotlib.backend_bases import KeyEvent
     from matplotlib.collections import Collection
+    from matplotlib.figure import Figure
     from matplotlib.figure import FigureBase
     from matplotlib.legend import Legend
     from matplotlib.lines import Line2D
@@ -30,6 +33,16 @@ if TYPE_CHECKING:
     from matplotlib.text import Text
 
     LegendItemHandle: TypeAlias = Line2D | Patch | Collection | Text
+
+    logging: ModuleType
+
+try:
+    import colorlog
+    logging = colorlog
+except ImportError:
+    import logging
+
+logger = logging.getLogger(__name__)
 
 
 def connect_mpl_keyboard_handler(fig: 'FigureBase'):
@@ -62,3 +75,62 @@ def deduped_figure_legend(fig: 'FigureBase', **kwargs) -> 'Legend':
 def mpl_keyboard_close_all(event: 'KeyEvent'):
     if event.key == 'ctrl+q':
         plt.close('all')
+
+
+class PlotOutputManager:
+    """A helper class to generate Plot outputs (display figures or export)."""
+
+    def __init__(self, save_path: Optional[Path] = None):
+        self._save_path = save_path.expanduser().absolute() if save_path is not None else None
+
+    @property
+    def display_plots(self) -> bool:
+        return self._save_path is None
+
+    @property
+    def save_plots(self) -> bool:
+        return self._save_path is not None
+
+    @property
+    def save_path(self) -> Optional[Path]:
+        return self._save_path
+
+    def output(
+        self, fig: 'Figure', /,
+        fname: str, block: Optional[bool] = None, *,
+        file_format: str = 'pgf',
+    ) -> None:
+        if self.display_plots:
+            old_fig = plt.gcf()
+            plt.figure(fig)
+            logger.info("Displaying Figure '%s'", fname)
+            connect_mpl_keyboard_handler(fig)
+            plt.show(block=block)
+            plt.figure(old_fig)
+        else:
+            assert self.save_path is not None
+            self.save_path.mkdir(parents=True, exist_ok=True)
+            assert self.save_path.is_dir(), 'Plot save path must be a directory'
+
+            filename = f'{fname}.{file_format}'
+            logger.info("Saving Figure to '%s'", self.save_path / filename)
+            fig.savefig(
+                self.save_path / filename,
+                format=file_format,
+            )
+            fig.canvas.draw_idle()  # Need this if 'transparent=True', to reset colors.
+            plt.close(fig)
+
+    def show_all(self, block: Optional[bool] = None) -> None:
+        if self.display_plots:
+            plt.show(block=block)
+
+    def __truediv__(self, subfolder) -> Self:
+        if self.display_plots:
+            return self
+        else:
+            assert self.save_path is not None
+            return self.__class__(self.save_path / subfolder)
+
+    def __repr__(self) -> str:
+        return f'{self.__class__.__name__}(save_path={self.save_path!r})'
