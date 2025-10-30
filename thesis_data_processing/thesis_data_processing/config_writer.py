@@ -12,6 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+from datetime import datetime
 from pathlib import Path
 import stat
 import sys
@@ -48,6 +49,7 @@ def create_config(basepath: Path, data_folder: Path, args: 'Namespace'):
     config_file = textwrap.dedent(
         r"""
         #!/usr/bin/env bash
+        # TIME {now}
         # datapath = {datapath}
         # {args!r}
 
@@ -62,6 +64,7 @@ def create_config(basepath: Path, data_folder: Path, args: 'Namespace'):
             executable=exc,
             datapath=data_folder,
             args=args,
+            now=datetime.now(),
             extra_args=' '.join(sys.argv[2:]),
             )).lstrip()
 

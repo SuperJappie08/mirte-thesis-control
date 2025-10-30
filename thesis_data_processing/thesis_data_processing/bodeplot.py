@@ -257,6 +257,7 @@ def fit_bode_data(
             previous_frequency = frequency
 
             for wheel_name in wheel_names:
+                local_plt_mgr = plt_mgr / f'{wheel_name.replace("_", "-")}'
                 local_df = cast(pd.DataFrame, data_df[wheel_name][frequency_key]).dropna(how='any')
 
                 xdata = local_df.index.to_numpy(dtype=np.float64)
@@ -314,7 +315,7 @@ def fit_bode_data(
                         freq_plot_extra_fmt['marker'] = '.'
 
                     fig = plt.figure()
-                    plt.suptitle(f'{wheel_name} @ f = {frequency}Hz')
+                    plt.suptitle(f'{wheel_name.replace("_", " ")} @ f = {frequency}Hz')
                     plt.title(f'phase delay = {phase:.03}rad/s, gain = {gain_scale:.03}')
                     plt.plot(
                         xdata[datarange_selector],
@@ -340,8 +341,8 @@ def fit_bode_data(
                     plt.ylabel('speed (rad/s)')
                     plt.legend()
 
-                    figure_name = f'{wheel_name.replace("_", "-")}-{frequency_key}'
-                    plt_mgr.output(fig, fname=figure_name, block=False)
+                    figure_name = f'{frequency_key}'
+                    local_plt_mgr.output(fig, fname=figure_name, block=False)
 
     return bode_df
 
@@ -397,6 +398,10 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         choices=['degrees', 'rad'], default='degrees',
         help='The units of the phase axis')
     bode_plot_group.add_argument(
+        '-fu', '--frequency-unit',
+        choices=['rad/s', 'Hz'], default='Hz',
+        help='The units of the frequency axis')
+    bode_plot_group.add_argument(
         '--phase-method',
         choices=['zero', 'continuous'], default='zero',
         help='How the phase is constraint during the calculations')
@@ -427,6 +432,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     bodeplot_num_ignored_frequencies: int = parsed_args.drop_frequencies
     bodeplot_gain_scale: Literal['dB'] | Literal['log'] = parsed_args.magnitude_unit
     bodeplot_phase_scale: Literal['rad'] | Literal['degrees'] = parsed_args.phase_unit
+    bodeplot_frequency_scale: Literal['rad/s'] | Literal['Hz'] = parsed_args.frequency_unit
 
     bodeplot_phase_method: Literal['zero'] | Literal['continuous'] = parsed_args.phase_method
 
@@ -486,7 +492,8 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         assert isinstance(ax_gain, plt.Axes)
         assert isinstance(ax_phase, plt.Axes)
 
-        fig.suptitle(f'{title_wheel_name} - Bode Plot')
+        if plt_mgr.display_plots:
+            fig.suptitle(f'{title_wheel_name} - Bode Plot')
 
         freq_selector = slice(None, -bodeplot_num_ignored_frequencies)
         frequency_axis = bode_df.index.to_numpy(dtype=np.float64)[freq_selector]
@@ -494,6 +501,14 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         # ax_gain.set_title('Magnitude Gain')
         ax_gain.set_xscale('log')
         ax_gain.grid(True, axis='both', which='both')
+
+        match bodeplot_frequency_scale:
+            case 'Hz':
+                ax_phase.set_xlabel('Frequency [Hz]')
+            case 'rad/s':
+                frequency_axis = 2*np.pi*frequency_axis
+                ax_phase.set_xlabel('Angular Frequency [rad/s]')
+
         match bodeplot_gain_scale:
             case 'log':
                 ax_gain.set_yscale('log')

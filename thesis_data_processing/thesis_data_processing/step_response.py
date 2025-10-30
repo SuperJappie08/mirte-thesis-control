@@ -378,7 +378,8 @@ def plot_system_usage(
         # ax_ram.set_ylim(0, 100)
         ax_ram.set_xlabel('Time (s)')
 
-        plt.suptitle(f'System usage - step size {step_command:01}')
+        if plt_mgr.display_plots:
+            plt.suptitle(f'System usage - step size {step_command:01}')
 
         plot_utils.deduped_figure_legend(fig, loc='center right')
         figure_name = f'system-cpu-ram-{step_command}'
@@ -497,8 +498,9 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         plt.xlabel('Time (s)')
         plt.ylabel('Velocity (rad/s)')
         plt.legend()
-        plt.suptitle(wheel_name)
-        plt.title(step_command)
+        if plt_mgr.display_plots:
+            plt.suptitle(wheel_name)
+            plt.title(step_command)
 
         figure_name = f'{wheel_name.replace("_", "-")}-{step_command}'
         plt_mgr.output(fig, fname=figure_name, block=False)

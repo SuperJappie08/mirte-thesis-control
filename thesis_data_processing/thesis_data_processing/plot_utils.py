@@ -42,6 +42,11 @@ try:
 except ImportError:
     import logging
 
+try:
+    import matplot2tikz as mpl2tkz
+except ImportError:
+    mpl2tkz = None
+
 logger = logging.getLogger(__name__)
 
 
@@ -98,7 +103,7 @@ class PlotOutputManager:
     def output(
         self, fig: 'Figure', /,
         fname: str, block: Optional[bool] = None, *,
-        file_format: str = 'pgf',
+        file_format: Optional[str] = 'pgf',
     ) -> None:
         if self.display_plots:
             old_fig = plt.gcf()
@@ -111,14 +116,18 @@ class PlotOutputManager:
             assert self.save_path is not None
             self.save_path.mkdir(parents=True, exist_ok=True)
             assert self.save_path.is_dir(), 'Plot save path must be a directory'
+            if file_format is None:
+                file_format = 'pgf' if mpl2tkz is None else 'tikz'
 
             filename = f'{fname}.{file_format}'
             logger.info("Saving Figure to '%s'", self.save_path / filename)
-            fig.savefig(
-                self.save_path / filename,
-                format=file_format,
-            )
-            fig.canvas.draw_idle()  # Need this if 'transparent=True', to reset colors.
+            if file_format == 'tikz':
+                assert mpl2tkz is not None
+                mpl2tkz.clean_figure(fig=fig)
+                mpl2tkz.save(figure=fig, filepath=self.save_path / filename)
+            else:
+                fig.savefig(self.save_path / filename, format=file_format)
+                fig.canvas.draw_idle()  # Need this if 'transparent=True', to reset colors.
             plt.close(fig)
 
     def show_all(self, block: Optional[bool] = None) -> None:
