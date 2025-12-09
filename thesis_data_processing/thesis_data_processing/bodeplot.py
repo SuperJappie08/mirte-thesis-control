@@ -31,6 +31,7 @@ from tqdm.contrib.logging import logging_redirect_tqdm
 
 if TYPE_CHECKING:
     from types import ModuleType
+    from typing import TypeAlias
 
     from builtin_interfaces.msg import Time as MsgTime
     from controller_manager_msgs.msg import ControllerManagerActivity
@@ -63,6 +64,8 @@ OFFSET_KEY = 'sinusoid.offset'
 PHASE_OFFSET_KEY = 'sinusoid.phase'
 
 TIME_DECIMAL_PLACES: int = 2
+
+OffsetCompensationMethod: 'TypeAlias' = Literal['input', 'avg', 'avg-filtered']
 
 
 # TODO: Could make something generic that dynamically checks multiple keys
@@ -223,6 +226,7 @@ def fit_bode_data(
     data_df: pd.DataFrame,
     phase_method,
     datarange_selector: slice = slice(None),
+    offset_compensation_mode: OffsetCompensationMethod = 'input',
     plt_mgr: PlotOutputManager = PlotOutputManager(),
     plot_all_frequencies: bool = False,
     plot_frequencies: Optional[np.ndarray] = None,
@@ -244,7 +248,7 @@ def fit_bode_data(
             frequency = float(frequency_key)
             amplitude = float(param_df.loc[frequency_key, 'amplitude'])
             phase_offset = float(param_df.loc[frequency_key, 'phase offset'])
-            offset = float(param_df.loc[frequency_key, 'offset'])
+            offset_data = float(param_df.loc[frequency_key, 'offset'])
 
             do_plot = plot_frequencies is not None and (
                 any(np.isclose(frequency, plot_frequencies)) or
@@ -265,6 +269,21 @@ def fit_bode_data(
 
                 sel_gain = (wheel_name, 'gain')
                 sel_phase = (wheel_name, 'phase')
+
+                offset = None
+                match offset_compensation_mode:
+                    case 'input':
+                        offset = offset_data
+                    case 'avg':
+                        offset = ydata.mean()
+                    case 'avg-filtered':
+                        lower_percentile = np.percentile(ydata, 25)
+                        upper_percentile = np.percentile(ydata, 75)
+                        iqr = (upper_percentile - lower_percentile)
+                        offset = ydata[((lower_percentile - 1.5 * iqr) < ydata)
+                                       & (ydata < (upper_percentile + 1.5 * iqr))].mean()
+
+                assert offset is not None, 'Invalid offset componsation mode was provided'
 
                 if phase_method == 'continuous':
                     initial_phase = (
@@ -406,6 +425,15 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         choices=['zero', 'continuous'], default='zero',
         help='How the phase is constraint during the calculations')
 
+    offset_correction_group = parser.add_argument_group('Signal offset compensation')
+    offset_correction_group.add_argument(
+        '-ocm', '--offset-compensation-mode',
+        choices=['input', 'avg', 'avg-filtered'], default='input',
+        help='How to deal with an offset input signal.'
+             " 'input': Match the offset of the input signal."
+             " 'avg': Use the average of the signal as the offset."
+             " 'avg-filtered': Use the average of the filtered signal.")
+
     arguments.add_global_plotting_arguments(parser)
 
     parsed_args = parser.parse_args(args)
@@ -430,11 +458,14 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
     # Bode Plot Settings
     bodeplot_num_ignored_frequencies: int = parsed_args.drop_frequencies
-    bodeplot_gain_scale: Literal['dB'] | Literal['log'] = parsed_args.magnitude_unit
-    bodeplot_phase_scale: Literal['rad'] | Literal['degrees'] = parsed_args.phase_unit
-    bodeplot_frequency_scale: Literal['rad/s'] | Literal['Hz'] = parsed_args.frequency_unit
+    bodeplot_gain_scale: Literal['dB', 'log'] = parsed_args.magnitude_unit
+    bodeplot_phase_scale: Literal['rad', 'degrees'] = parsed_args.phase_unit
+    bodeplot_frequency_scale: Literal['rad/s', 'Hz'] = parsed_args.frequency_unit
 
-    bodeplot_phase_method: Literal['zero'] | Literal['continuous'] = parsed_args.phase_method
+    bodeplot_phase_method: Literal['zero', 'continuous'] = parsed_args.phase_method
+
+    # Offset Compensation Settings
+    offset_compensation_mode: OffsetCompensationMethod = parsed_args.offset_compensation_mode
 
     # Data settings
     data_folder: Path = cast(Path, parsed_args.folder).absolute()
@@ -474,6 +505,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         data_df=data_df,
         phase_method=bodeplot_phase_method,
         datarange_selector=datarange_selector,
+        offset_compensation_mode=offset_compensation_mode,
         # Plotting parameters
         plt_mgr=plt_mgr / 'fit',
         plot_all_frequencies=plot_all_frequencies,
