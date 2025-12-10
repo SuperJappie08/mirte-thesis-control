@@ -22,6 +22,7 @@ setup(
         'console_scripts': [
             f'bodeplotter = {package_name}.bodeplot:main',
             f'step_response = {package_name}.step_response:main',
+            f'zero_frequency_correction_data = {package_name}.zero_frequency_correction_data:main',
         ],
     },
 )
