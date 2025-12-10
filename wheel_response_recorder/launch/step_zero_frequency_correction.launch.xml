@@ -1,0 +1,63 @@
+<?xml version="1.1" encoding="UTF-8"?>
+<launch>
+  <arg name="audit-progress" default="False" />
+
+  <arg name="controller_name" default="multi_wheel_step_controller" />
+
+  <include file="$(find-pkg-share wheel_response_recorder)/launch/arguments/hw_interface.launch.xml">
+    <arg name="hw_interface" value="$(var hw_interface)" />
+  </include>
+
+  <arg name="measurement_postfix" default=""
+    description="A post fix, which will be put between the measurement type and the date" />
+
+  <arg name="correction_param_file" default="step_zero_frequency_correction.yaml"
+    description="The step response parameter iteration configuration file (located in config/measurement)" />
+  <arg name="correction_param_fullpath"
+    default="$(find-pkg-share wheel_response_recorder)/config/measurement/$(var correction_param_file)"
+    description="The step iteration configuration file (full path)" />
+
+  <arg name="measurements_folder" default="~/thesis/measurements" />
+
+  <arg name="measurement_duration" default="5.0" />
+
+  <arg name="extra_notes" default="" description="Extra notes to store with the measurements" />
+  <arg name="manual" default="False" description="Wait for continue service call between measurements"/>
+
+  <group forwarding="False">
+    <keep name="audit-progress" value="$(var audit-progress)" />
+    <keep name="controller_name" value="$(var controller_name)" />
+
+    <keep name="hw_interface" value="$(var hw_interface)" />
+    <keep name="measurement_postfix" value="$(var measurement_postfix)" />
+
+    <keep name="correction_param_fullpath" value="$(var correction_param_fullpath)" />
+
+    <keep name="measurements_folder" value="$(var measurements_folder)" />
+    <keep name="measurement_duration" value="$(var measurement_duration)" />
+
+    <keep name="extra_notes" value="$(var extra_notes)" />
+    <keep name="manual" value="$(var manual)"/>
+
+    <include file="$(find-pkg-share wheel_response_recorder)/launch/measure.launch.xml">
+      <arg name="audit-progess" value="$(var audit-progress)" />
+      <arg name="controller_name" value="$(var controller_name)" />
+
+      <!-- Measurement type -->
+      <arg name="measurement_type" value="step-freq-zero-correction" />
+      <arg name="enable_hw_type_id" value="True" />
+      <arg name="hw_type_postfix" value="$(var measurement_postfix)" />
+
+      <arg name="parameter_filepath" value="$(var correction_param_fullpath)" />
+
+      <arg name="measurements_folder" value="$(var measurements_folder)" />
+
+      <arg name="measurement_duration" value="$(var measurement_duration)" />
+
+      <arg name="hw_interface" value="$(var hw_interface)" />
+
+      <arg name="extra_notes" value="$(var extra_notes)" />
+      <arg name="manual" value="$(var manual)" />
+    </include>
+  </group>
+</launch>
