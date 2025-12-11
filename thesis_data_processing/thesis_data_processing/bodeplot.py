@@ -65,7 +65,10 @@ PHASE_OFFSET_KEY = 'sinusoid.phase'
 
 TIME_DECIMAL_PLACES: int = 2
 
-OffsetCompensationMethod: 'TypeAlias' = Literal['input', 'avg', 'avg-filtered']
+CORRECTION_FILE_PREFIX = 'step-freq-zero-correction-'
+
+OffsetCompensationMethod: 'TypeAlias' = Literal['input', 'avg', 'avg-filtered', 'data']
+OffsetCompensationData: 'TypeAlias' = Literal['input', 'avg', 'avg-filtered'] | pd.DataFrame
 
 
 # TODO: Could make something generic that dynamically checks multiple keys
@@ -95,6 +98,48 @@ def get_trial_data(data_folder: Path) -> tuple[int, list[Decimal], pd.DataFrame]
     trial_idxs = list(trials.keys())
 
     return max_trials, trial_idxs, param_df
+
+
+def get_offset_compensation_data(
+    compensation_mode: OffsetCompensationMethod,
+    compensation_data_path: Optional[Path],
+    data_foldername: str,
+) -> OffsetCompensationData:
+    if compensation_mode == 'data':
+        if compensation_data_path is None:
+            logger.critical("'CORRECTION_DATA' must be specified when using offset mode 'data'")
+            exit(-1)
+
+        assert compensation_data_path.is_file(), "The specified 'CORRECTION_DATA' must be a file"
+
+        config_spec = '-'.join(data_foldername.rsplit('-')[-2:])
+        filename = compensation_data_path.stem[:-(utils.FULL_DATETIME_LENGTH + 1)]
+        if not (filename.startswith(CORRECTION_FILE_PREFIX) and filename.endswith(config_spec)):
+            logger.warning(
+                "The data file '%s' might not correspond with current configuration",
+                compensation_data_path,
+            )
+            if not utils.prompt(
+                f"The provided data '{filename}' does not correspond with "
+                f"measurement ('{data_foldername}'). Continue anyway?",
+                default=False,
+            ):
+                logger.critical('Aborting data processing')
+                exit(-1)
+
+        logger.info("Using offset compensation data from '%s'", compensation_data_path)
+
+        return pd.read_pickle(compensation_data_path)
+    else:
+        logger.info("Using offset compensation mode '%s'", compensation_mode)
+        if compensation_data_path is not None:
+            logger.warning(
+                "A correction data file was supplied, which is only used when the mode is 'data'. "
+                "The mode specified mode is '%s'. IGNORING 'CORRECTION_DATA'!",
+                compensation_mode,
+            )
+
+        return compensation_mode
 
 
 def create_dataframes(
@@ -226,7 +271,7 @@ def fit_bode_data(
     data_df: pd.DataFrame,
     phase_method,
     datarange_selector: slice = slice(None),
-    offset_compensation_mode: OffsetCompensationMethod = 'input',
+    offset_compensation_data: OffsetCompensationData = 'input',
     plt_mgr: PlotOutputManager = PlotOutputManager(),
     plot_all_frequencies: bool = False,
     plot_frequencies: Optional[np.ndarray] = None,
@@ -271,7 +316,10 @@ def fit_bode_data(
                 sel_phase = (wheel_name, 'phase')
 
                 offset = None
-                match offset_compensation_mode:
+                match offset_compensation_data:
+                    case _ if isinstance(offset_compensation_data, pd.DataFrame):
+                        offset = \
+                            offset_compensation_data[param_df['offset'][frequency_key]][wheel_name]
                     case 'input':
                         offset = offset_data
                     case 'avg':
@@ -428,11 +476,17 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     offset_correction_group = parser.add_argument_group('Signal offset compensation')
     offset_correction_group.add_argument(
         '-ocm', '--offset-compensation-mode',
-        choices=['input', 'avg', 'avg-filtered'], default='input',
+        choices=['input', 'avg', 'avg-filtered', 'data'], default='input',
         help='How to deal with an offset input signal.'
              " 'input': Match the offset of the input signal."
              " 'avg': Use the average of the signal as the offset."
-             " 'avg-filtered': Use the average of the filtered signal.")
+             " 'avg-filtered': Use the average of the filtered signal."
+             " 'data': Use external provided measurement data.")
+    offset_correction_group.add_argument(
+        '-cdf', '--correction-data-file',
+        action='store', required=False,
+        type=Path, metavar='CORRECTION_DATA',
+        help="Correction data file for mode 'data'")
 
     arguments.add_global_plotting_arguments(parser)
 
@@ -464,15 +518,27 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
     bodeplot_phase_method: Literal['zero', 'continuous'] = parsed_args.phase_method
 
-    # Offset Compensation Settings
-    offset_compensation_mode: OffsetCompensationMethod = parsed_args.offset_compensation_mode
-
     # Data settings
     data_folder: Path = cast(Path, parsed_args.folder).absolute()
 
     assert data_folder.is_dir(), "The specified 'FOLDER' must be a folder containing rosbags"
     plt_mgr /= data_folder.name[:-(utils.FULL_DATETIME_LENGTH + 1)]
 
+    # Offset Compensation Settings
+    offset_compensation_mode: OffsetCompensationMethod = parsed_args.offset_compensation_mode
+    offset_compensation_data_path: Optional[Path] = (
+        cast(Path, parsed_args.correction_data_file).expanduser().absolute()
+        if parsed_args.correction_data_file is not None
+        else None
+    )
+
+    offset_compensation_data: OffsetCompensationData = get_offset_compensation_data(
+        compensation_mode=offset_compensation_mode,
+        compensation_data_path=offset_compensation_data_path,
+        data_foldername=data_folder.name[:-(utils.FULL_DATETIME_LENGTH + 1)],
+    )
+
+    # Save generation config
     if plt_mgr.save_path is not None:
         create_config(
             basepath=plt_mgr.save_path,
@@ -505,7 +571,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         data_df=data_df,
         phase_method=bodeplot_phase_method,
         datarange_selector=datarange_selector,
-        offset_compensation_mode=offset_compensation_mode,
+        offset_compensation_data=offset_compensation_data,
         # Plotting parameters
         plt_mgr=plt_mgr / 'fit',
         plot_all_frequencies=plot_all_frequencies,

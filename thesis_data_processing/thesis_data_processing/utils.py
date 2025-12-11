@@ -82,3 +82,23 @@ def append_df(
     assert target_df.loc[append_df.index, selector].equals(append_df)
 
     return target_df
+
+
+def prompt(question: str, default: bool = True) -> bool:
+    """
+    Prompt the user for binary input with a default.
+
+    :param question: The question to ask the user.
+    :type  question: str
+    :param default: If the default is True (Yes) of False (No)
+    :type  default: bool, optional
+
+    :returns: the prompt response
+    :rtype: bool
+    """
+    default_token = 'n' if default else 'y'
+    input_hint = ' [Yn] ' if default else ' [yN] '
+
+    result = input(question + input_hint).lower().startswith(default_token)
+
+    return result != default

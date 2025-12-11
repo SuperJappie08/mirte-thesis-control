@@ -19,6 +19,8 @@ import sys
 import textwrap
 from typing import TYPE_CHECKING
 
+from .utils import prompt
+
 if TYPE_CHECKING:
     from argparse import Namespace
 
@@ -30,12 +32,7 @@ def create_config(basepath: Path, data_folder: Path, args: 'Namespace'):
 
     print(Path().absolute().resolve())
     if config_path.exists():
-        do_continue = input(
-            f"Export '{basepath}' already exists! Override [yN] ",
-        ).lower().startswith('y')
-        print()
-
-        if not do_continue:
+        if not prompt(f"Export '{basepath}' already exists! Override", default=False):
             exit()
 
     install_dir = Path(sys.argv[0])
