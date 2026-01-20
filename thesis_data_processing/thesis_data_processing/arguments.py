@@ -30,3 +30,24 @@ def add_global_plotting_arguments(parser: argparse.ArgumentParser):
         type=Path, metavar='DEST_FOLDER',
         help='Path to save plots to. (Only saving when supplied)',
     )
+
+
+def add_global_data_export_arguments(parser: argparse.ArgumentParser) -> argparse._ArgumentGroup:
+    group = parser.add_argument_group('Data Export')
+    group.add_argument(
+        '--export-path',
+        action='store', required=False,
+        type=Path, metavar='EXPORT_FOLDER',
+        help='Path to save exported data to. '
+        "Defaults to, save plot's DEST_FOLDER/data if available.")
+    group.add_argument(
+        '--export-target-type',
+        choices=['pickle', 'pkl', 'tex'], required=False,
+        help='Format to export data as. (Required when exporting)')
+    group.add_argument(
+        '--export-prefix',
+        action='store', required=False,
+        type=str, metavar='PREFIX',
+        help='Prefix for exported tex commands')
+
+    return group

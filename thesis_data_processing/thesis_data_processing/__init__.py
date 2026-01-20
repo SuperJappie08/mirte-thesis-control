@@ -14,10 +14,12 @@
 
 from . import arguments
 from . import conversions
+from . import export_utils
 from . import plot_utils
 from . import utils
 from .config_writer import create_config
 from .data_consistency_checker import DataConsistencyChecker
+from .data_export_manager import DataExportManager
 from .diagnostics_collector import CONTROLLER_MANAGER_DIAGNOSTIC_NAME_MAPPING
 from .diagnostics_collector import DiagnosticsCollector
 from .diagnostics_collector import SYSTEM_DIAGNOSTIC_NAME_MAPPING
@@ -29,6 +31,7 @@ from .statistics_collector import StatisticsCollector
 __all__ = [
     'CONTROLLER_MANAGER_DIAGNOSTIC_NAME_MAPPING',
     'DataConsistencyChecker',
+    'DataExportManager',
     'DiagnosticsCollector',
     'PlotOutputManager',
     'SYSTEM_DIAGNOSTIC_NAME_MAPPING',
@@ -36,6 +39,7 @@ __all__ = [
     'arguments',
     'conversions',
     'create_config',
+    'export_utils',
     'open_rosbag',
     'plot_utils',
     'read_messages',

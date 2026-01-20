@@ -20,7 +20,8 @@ import itertools
 import math
 from pathlib import Path
 from pprint import pprint  # noqa: F401
-from typing import cast, Optional, TYPE_CHECKING
+import textwrap
+from typing import cast, Literal, Optional, TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -34,7 +35,9 @@ from . import arguments
 from . import CONTROLLER_MANAGER_DIAGNOSTIC_NAME_MAPPING
 from . import create_config
 from . import DataConsistencyChecker
+from . import DataExportManager
 from . import DiagnosticsCollector
+from . import export_utils
 from . import open_rosbag
 from . import plot_utils
 from . import PlotOutputManager
@@ -72,6 +75,8 @@ MIRTE_HW_ID = 'Mirte-867B16'
 
 AVG_CPU_LOAD_COL = f'{MIRTE_HW_ID}.cpu-monitor.CPU Load Average'
 AVG_RAM_LOAD_COL = f'{MIRTE_HW_ID}.ram-monitor.RAM Load Average'
+
+DATASET_FINAL_VEL_AVG = 'final-avg'
 
 
 def get_trial_data(data_folder: Path) -> tuple[int, list[Decimal], pd.DataFrame]:
@@ -386,6 +391,23 @@ def plot_system_usage(
         plt_mgr.output(fig, fname=figure_name, block=False)
 
 
+def convert_final_velocity_average_to_tex(
+    prefix: str,
+    key: tuple[str, Decimal],
+    value: float,
+) -> str:
+    tex_wheel_name = export_utils.convert_wheel_joint_to_tex(key[0])
+    trail_type = export_utils.step_size_to_tex(key[1])
+
+    command_name = f'\\{prefix}FinalAvg{tex_wheel_name}{trail_type}'
+
+    return textwrap.dedent(f"""\
+        % Settings: {str(key)}
+        \\newcommand{{{command_name}Raw}}{{{str(value)}}}
+        \\newcommand{{{command_name}}}{{\\qty{{{command_name}Raw}}{{\\radian\\per\\second}}\\xspace}}
+        """)
+
+
 def main(args: Optional[Sequence[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
@@ -402,6 +424,14 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         action='store_true', required=False,
         help='Enable system usage plots')
 
+    data_export_group = arguments.add_global_data_export_arguments(parser)
+    data_export_group.add_argument(
+        '-efa', '--export-final-avg',
+        action='store', required=False,
+        type=float, metavar='AVG_FROM',
+        help='Enable export of final average trail value. '
+             'Specifies time to take average from relative to the step time')
+
     arguments.add_global_plotting_arguments(parser)
 
     parsed_args = parser.parse_args(args)
@@ -412,11 +442,36 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     # Plotting arguments
     do_plot_system_usage: bool = parsed_args.plot_system_usage
 
+    # Data Export settings
+    export_target_type: Optional[Literal['pickle', 'pkl', 'tex']] = parsed_args.export_target_type
+    export_tex_prefix: str = 'step' + (parsed_args.export_prefix or '???').strip()
+
+    export_final_average_value_from: Optional[float] = parsed_args.export_final_avg
+
     # Data settings
     data_folder: Path = cast(Path, parsed_args.folder).expanduser().absolute()
 
     assert data_folder.is_dir(), "The specified 'FOLDER' must be a folder containing rosbags"
     plt_mgr /= data_folder.name[:-(utils.FULL_DATETIME_LENGTH + 1)]
+
+    export_tex_prefix += export_utils.datafolder_to_tex_command_base(data_folder)
+
+    data_export_manager = DataExportManager(
+        export_path=parsed_args.export_path,
+        plt_save_path=plt_mgr.save_path,
+        export_prefix=export_tex_prefix,
+    )
+
+    if export_final_average_value_from is not None:
+        data_export_manager.register_dataset(
+            DATASET_FINAL_VEL_AVG,
+            convert_final_velocity_average_to_tex,
+        )
+
+    assert data_export_manager.do_export == (export_target_type is not None), \
+        "'--export-target-type' should only be specified when exporting."
+    assert data_export_manager.do_export == bool(parsed_args.export_prefix), \
+        "'--export-prefix' must be specified as non-empty when exporting."
 
     if plt_mgr.save_path is not None:
         create_config(
@@ -495,6 +550,12 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         mean_state: pd.Series = trials_df.loc[:, (slice(None), 'state')].mean(axis=1)
         mean_state.plot.line(**plt_kwargs, label='State (avg)')
 
+        if export_final_average_value_from is not None:
+            t_step = param_df['t_step'][step_command]
+
+            data_export_manager.get_dataset(DATASET_FINAL_VEL_AVG)[(wheel_name, step_command)] = \
+                mean_state[(t_step + Decimal(export_final_average_value_from)):].mean()
+
         plt.xlabel('Time (s)')
         plt.ylabel('Velocity (rad/s)')
         plt.legend()
@@ -506,6 +567,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         plt_mgr.output(fig, fname=figure_name, block=False)
 
     plt_mgr.show_all()
+    data_export_manager.export_all(filetype=export_target_type)
 
     # NOTE(SuperJappie08): Some data is missing, but it is not critical for this measurement
     data_dict = {
