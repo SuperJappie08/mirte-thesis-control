@@ -19,7 +19,6 @@ from decimal import Decimal
 import itertools
 import math
 from pathlib import Path
-from pprint import pprint  # noqa: F401
 import textwrap
 from typing import cast, Literal, Optional, TYPE_CHECKING
 
@@ -358,7 +357,6 @@ def plot_system_usage(
 
         ax_cpu.set_ylabel('CPU Load Average (%)')
         # ax_cpu.set_ylim(0, 100)
-        # ax_cpu.tick_params('x', labelbottom=True)
 
         # RAM
         ax_ram.set_title('Average RAM Load')
@@ -383,8 +381,8 @@ def plot_system_usage(
         # ax_ram.set_ylim(0, 100)
         ax_ram.set_xlabel('Time (s)')
 
-        if plt_mgr.display_plots:
-            plt.suptitle(f'System usage - step size {step_command:01}')
+        plt.suptitle(f'System Usage - Command {step_command:01} rad/s'
+                     + plt_mgr.configuration_title)
 
         plot_utils.deduped_figure_legend(fig, loc='center right')
         figure_name = f'system-cpu-ram-{step_command}'
@@ -453,6 +451,8 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
     assert data_folder.is_dir(), "The specified 'FOLDER' must be a folder containing rosbags"
     plt_mgr /= data_folder.name[:-(utils.FULL_DATETIME_LENGTH + 1)]
+
+    plt_mgr.configuration = data_folder  # type: ignore
 
     export_tex_prefix += export_utils.datafolder_to_tex_command_base(data_folder)
 
@@ -534,21 +534,19 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
         # NOTE: Make a custom figure to enable plotting the command first
         fig, ax = plt.subplots()
-        plt_kwargs = {
-            'ax': ax,
-            'use_index': True,
-            'legend': False,
-        }
 
         mean_command: pd.Series = trials_df.loc[:, (slice(None), 'command')].mean(axis=1)
-        mean_command.plot.line(**plt_kwargs, label='Command', color='grey')
+        ax.plot(mean_command.index, mean_command, label='Command', color='grey')
 
-        trials_df.loc[:, (slice(None), 'state')].plot.line(**plt_kwargs, linestyle=':')
-        for idx, line in enumerate(ax.get_lines()[1:], start=1):
-            line.set_label(f'State {idx}')
+        for (idx, _), content in trials_df.loc[:, (slice(None), 'state')].items():
+            assert isinstance(idx, int)
+            assert isinstance(content, pd.Series)
+
+            local_series = content.dropna(how='all')
+            ax.plot(local_series.index, local_series, label=f'State {idx + 1}', linestyle=':')
 
         mean_state: pd.Series = trials_df.loc[:, (slice(None), 'state')].mean(axis=1)
-        mean_state.plot.line(**plt_kwargs, label='State (avg)')
+        ax.plot(mean_state.index, mean_state, label='State (avg)')
 
         if export_final_average_value_from is not None:
             t_step = param_df['t_step'][step_command]
@@ -559,9 +557,11 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         plt.xlabel('Time (s)')
         plt.ylabel('Velocity (rad/s)')
         plt.legend()
+
+        plt.title(f'Command {step_command:01} rad/s' + plt_mgr.configuration_title)
+
         if plt_mgr.display_plots:
-            plt.suptitle(wheel_name)
-            plt.title(step_command)
+            plt.suptitle(f'Step Response - {export_utils.joint_name2plot(wheel_name)}')
 
         figure_name = f'{wheel_name.replace("_", "-")}-{step_command}'
         plt_mgr.output(fig, fname=figure_name, block=False)
@@ -585,13 +585,5 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     )
 
     assert len(data_dict) == 8*len(data_dict_unique_sorted), 'Unequally Missing data'
-    # pprint(data_dict_unique_sorted, width=120)
 
-    # TODO(SuperJappie08): Do something with the data, it is all there, it is packed a bit weird.
-    if False:
-        pprint(
-            sorted((index, row.count()) for (index, row) in diagnostics_data_df.items()),
-            width=160,
-        )
-
-    raise NotImplementedError()
+    return 0

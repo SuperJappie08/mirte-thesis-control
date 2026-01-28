@@ -185,4 +185,4 @@ class DiagnosticsCollector:
         return self.__name_mapping.get(name, name)
 
     def _include_entry(self, hardware_id: str, name: str, key: str) -> bool:
-        return hardware_id not in self.__ignored_hw_ids and True  # FIXME: FINISH
+        return hardware_id not in self.__ignored_hw_ids

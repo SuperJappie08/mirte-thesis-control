@@ -55,6 +55,7 @@ from . import read_messages
 from . import StatisticsCollector
 from . import utils
 from .conversions import gain2dB
+from .export_utils import joint_name2plot
 
 logger = logging.getLogger(__name__)
 
@@ -382,8 +383,10 @@ def fit_bode_data(
                         freq_plot_extra_fmt['marker'] = '.'
 
                     fig = plt.figure()
-                    plt.suptitle(f'{wheel_name.replace("_", " ")} @ f = {frequency}Hz')
-                    plt.title(f'phase delay = {phase:.03}rad/s, gain = {gain_scale:.03}')
+                    # TODO(SuperJappie08): Not Fully happy with this yet
+                    plt.suptitle(f'{joint_name2plot(wheel_name)}{plt_mgr.configuration_title}')
+                    plt.title(f'frequency = {frequency:.03} Hz, phase delay = {phase:.03} rad/s, '
+                              f'gain = {gain_scale:.03}')
                     plt.plot(
                         xdata[datarange_selector],
                         local_df['command'].to_numpy(dtype=np.float64)[datarange_selector],
@@ -399,11 +402,7 @@ def fit_bode_data(
                         f(xdata[datarange_selector], gain_scale, phase),
                         label='fit',
                         **freq_plot_extra_fmt)
-                    plt.xticks(xdata[slice(
-                        datarange_selector.start,
-                        datarange_selector.stop,
-                        100,
-                    )])
+
                     plt.xlabel('Time (s)')
                     plt.ylabel('speed (rad/s)')
                     plt.legend()
@@ -414,7 +413,6 @@ def fit_bode_data(
     return bode_df
 
 
-# TODO(SuperJappie08): After the refactor the plots changed a bit for some reason?
 def main(args: Optional[Sequence[str]] = None) -> int:
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
@@ -524,6 +522,8 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     assert data_folder.is_dir(), "The specified 'FOLDER' must be a folder containing rosbags"
     plt_mgr /= data_folder.name[:-(utils.FULL_DATETIME_LENGTH + 1)]
 
+    plt_mgr.configuration = data_folder  # type: ignore
+
     # Offset Compensation Settings
     offset_compensation_mode: OffsetCompensationMethod = parsed_args.offset_compensation_mode
     offset_compensation_data_path: Optional[Path] = (
@@ -585,13 +585,13 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
     # FIXME: ADD DATA EXPORT MODES (So make plot, save plot, save data)
     for idx, wheel_name in enumerate(wheel_names):
-        title_wheel_name = wheel_name.removesuffix('_joint').replace('_', ' ')
+        title_wheel_name = joint_name2plot(wheel_name)
         fig, [ax_gain, ax_phase] = plt.subplots(2, 1, sharex=True)
         assert isinstance(ax_gain, plt.Axes)
         assert isinstance(ax_phase, plt.Axes)
 
-        if plt_mgr.display_plots:
-            fig.suptitle(f'{title_wheel_name} - Bode Plot')
+        fig.suptitle(f'Bode Plot - {title_wheel_name}{plt_mgr.configuration_title}')
+        # TODO(SuperJappie08): Add subplot titles
 
         freq_selector = slice(None, -bodeplot_num_ignored_frequencies)
         frequency_axis = bode_df.index.to_numpy(dtype=np.float64)[freq_selector]
@@ -628,8 +628,6 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             case _:
                 raise ValueError('Unknown plot Magnitude/Gain scale')
 
-        print(bode_df.loc[:, wheel_name])
-
         # ax_phase.set_title(f'{title_wheel_name} -- Phase')
         ax_phase.set_xscale('log')
         ax_phase.grid(True, axis='both', which='both')
@@ -654,7 +652,9 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             case _:
                 raise ValueError('Unknown plot Phase scale')
 
-        figure_name = f'bode-{title_wheel_name.replace(" ", "-")}'
-        plt_mgr.output(fig, fname=figure_name, block=(idx + 1 == len(wheel_names)))
+        figure_name = f'bode-{title_wheel_name.replace(" ", "-").lower()}'
+        plt_mgr.output(fig, fname=figure_name, block=False)
 
-    raise NotImplementedError()
+    plt_mgr.show_all()
+
+    return 0

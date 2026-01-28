@@ -18,6 +18,8 @@ from typing import Optional, Self, TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 
+from .export_utils import extract_configuration
+
 if TYPE_CHECKING:
     from types import ModuleType
     from typing import TypeAlias
@@ -85,8 +87,38 @@ def mpl_keyboard_close_all(event: 'KeyEvent'):
 class PlotOutputManager:
     """A helper class to generate Plot outputs (display figures or export)."""
 
-    def __init__(self, save_path: Optional[Path] = None):
+    def __init__(self, save_path: Optional[Path] = None, configuration: Optional[str] = None):
         self._save_path = save_path.expanduser().absolute() if save_path is not None else None
+        self._configuration = configuration
+
+    @property
+    def configuration(self) -> Optional[str]:
+        return self._configuration
+
+    @configuration.setter
+    def configuration(self, data_folder: Path):
+        assert isinstance(data_folder, Path), 'Comfiguration must be set with a Path'
+        assert self._configuration is None, 'Configuration was already set'
+        mode_identifier, frequency_identifier = extract_configuration(data_folder)
+
+        nice_mode: str
+        match mode_identifier:
+            case 'srv':
+                nice_mode = 'Service-based'
+            case 'mmt':
+                nice_mode = 'Topic-based'
+            case mode:
+                logger.warning("Configuration '%s' does not have a plot conversion.", mode)
+                nice_mode = mode
+
+        self._configuration = f'{nice_mode} @ {frequency_identifier[1:]} Hz'
+
+    @property
+    def configuration_title(self) -> str:
+        if self.configuration is None:
+            return ''
+        else:
+            return f' - {self.configuration}'
 
     @property
     def display_plots(self) -> bool:
@@ -139,7 +171,8 @@ class PlotOutputManager:
             return self
         else:
             assert self.save_path is not None
-            return self.__class__(self.save_path / subfolder)
+            return self.__class__(self.save_path / subfolder, configuration=self.configuration)
 
     def __repr__(self) -> str:
-        return f'{self.__class__.__name__}(save_path={self.save_path!r})'
+        return f'{self.__class__.__name__}(save_path={self.save_path!r}, ' \
+                f'configuration={self.configuration!r})'

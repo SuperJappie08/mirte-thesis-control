@@ -18,6 +18,18 @@ from pathlib import PurePath as Path
 from . import utils
 
 
+def joint_name2plot(wheel_name: str) -> str:
+    """
+    Convert the joint name to a better plot title.
+
+    :param wheel_name: The wheel joint name
+    :type wheel_name: str
+    :return: The plot title fragment
+    :rtype: str
+    """
+    return ' '.join(s.capitalize() for s in wheel_name.split('_') if s != 'joint')
+
+
 def convert_wheel_joint_to_tex(wheel_name: str) -> str:
     return ''.join(s.capitalize() for s in wheel_name.split('_') if s != 'joint')
 
@@ -50,6 +62,19 @@ def frequency_to_tex(frequency: str) -> str:
         raise ValueError(f"Unknown frequency specifier '{frequency}'")
 
 
-def datafolder_to_tex_command_base(data_folder: Path) -> str:
+def extract_configuration(data_folder: Path) -> tuple[str, str]:
+    """
+    Extract the test configuration from the datapath.
+
+    :param data_folder: The data_path containing the ROSBags
+    :type data_folder: Path
+    :return: A tuple of the mode abbreviation and the frequency identifier
+    :rtype: tuple[str, str]
+    """
     mode, frequency = data_folder.name[:-(utils.FULL_DATETIME_LENGTH + 1)].split('-')[-2:]
+    return mode, frequency
+
+
+def datafolder_to_tex_command_base(data_folder: Path) -> str:
+    mode, frequency = extract_configuration(data_folder)
     return f'{mode.capitalize()}{frequency_to_tex(frequency)}'
