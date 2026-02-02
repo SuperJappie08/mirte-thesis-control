@@ -13,7 +13,7 @@
 # limitations under the License.
 
 from decimal import Decimal
-from typing import TYPE_CHECKING
+from typing import Any, TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -102,3 +102,14 @@ def prompt(question: str, default: bool = True) -> bool:
     result = input(question + input_hint).lower().startswith(default_token)
 
     return result != default
+
+
+def get_nested_dict(d: dict[str, Any], *keys: str) -> dict[str, Any]:
+    temp_dict = d
+
+    for key in keys:
+        old_temp_dict = temp_dict
+        temp_dict = old_temp_dict.get(key, {})
+        old_temp_dict[key] = temp_dict
+
+    return temp_dict

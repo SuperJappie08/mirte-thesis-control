@@ -314,7 +314,6 @@ def create_dataframes(
     return data_df, diagnostics_data_df
 
 
-# TODO: Take Y bounds as arguments
 # TODO: Optional RAM
 def plot_system_usage(
     param_df: pd.DataFrame,
@@ -386,6 +385,26 @@ def plot_system_usage(
 
         plot_utils.deduped_figure_legend(fig, loc='center right')
         figure_name = f'system-cpu-ram-{step_command}'
+
+        if plt_mgr.capturing_config:
+            plt_mgr[figure_name, 'CPU'] = {
+                'ymin': ax_cpu.get_ylim()[0],
+                'ymax': ax_cpu.get_ylim()[1],
+            }
+            plt_mgr[figure_name, 'RAM'] = {
+                'ymin': ax_ram.get_ylim()[0],
+                'ymax': ax_ram.get_ylim()[1],
+            }
+        else:
+            ax_cpu.set_ylim(
+                ymin=plt_mgr.get((figure_name, 'CPU', 'ymin')),
+                ymax=plt_mgr.get((figure_name, 'CPU', 'ymax')),
+            )
+            ax_ram.set_ylim(
+                ymin=plt_mgr.get((figure_name, 'RAM', 'ymin')),
+                ymax=plt_mgr.get((figure_name, 'RAM', 'ymax')),
+            )
+
         plt_mgr.output(fig, fname=figure_name, block=False)
 
 
@@ -435,10 +454,31 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     parsed_args = parser.parse_args(args)
 
     # Process arguments
-    plt_mgr = PlotOutputManager(parsed_args.save_plots)
+    if parsed_args.save_only_plot_settings:
+        assert parsed_args.save_plots is not None, \
+            '--save-plots must also be provided when using --save-only-plot-settings'
+        assert parsed_args.save_plot_settings, \
+            '--save-plot-settings must also be provided when using --save-only-plot-settings'
+
+    plt_mgr = PlotOutputManager(
+        parsed_args.save_plots,
+        force_display=parsed_args.save_only_plot_settings,
+        config_mode='load' if parsed_args.load_plot_settings is not None else 'capture',
+    )
+
+    if parsed_args.load_plot_settings is not None:
+        plot_settings_path: Path = parsed_args.load_plot_settings
+        assert plot_settings_path.is_file(), \
+            "The specified 'PLOT_SETTINGS' must be a valid plot settings file (pickle)"
+        plt_mgr.load_config(plot_settings_path)
 
     # Plotting arguments
     do_plot_system_usage: bool = parsed_args.plot_system_usage
+
+    if parsed_args.save_plot_settings and not do_plot_system_usage:
+        logger.warning('Attempting to save plot values, while not all plots are enabled!')
+        if not utils.prompt('Are you sure you want to continue?', default=False):
+            exit()
 
     # Data Export settings
     export_target_type: Optional[Literal['pickle', 'pkl', 'tex']] = parsed_args.export_target_type
@@ -564,10 +604,25 @@ def main(args: Optional[Sequence[str]] = None) -> int:
             plt.suptitle(f'Step Response - {export_utils.joint_name2plot(wheel_name)}')
 
         figure_name = f'{wheel_name.replace("_", "-")}-{step_command}'
+
+        if plt_mgr.capturing_config:
+            plt_mgr[figure_name] = {
+                'ymin': ax.get_ylim()[0],
+                'ymax': ax.get_ylim()[1],
+            }
+        else:
+            ax.set_ylim(
+                ymin=plt_mgr.get((figure_name, 'ymin')),
+                ymax=plt_mgr.get((figure_name, 'ymax')),
+            )
+
         plt_mgr.output(fig, fname=figure_name, block=False)
 
     plt_mgr.show_all()
     data_export_manager.export_all(filetype=export_target_type)
+
+    if parsed_args.save_plot_settings:
+        plt_mgr.save_config()
 
     # NOTE(SuperJappie08): Some data is missing, but it is not critical for this measurement
     data_dict = {

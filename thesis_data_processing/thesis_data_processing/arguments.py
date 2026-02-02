@@ -30,6 +30,23 @@ def add_global_plotting_arguments(parser: argparse.ArgumentParser):
         type=Path, metavar='DEST_FOLDER',
         help='Path to save plots to. (Only saving when supplied)',
     )
+    parser.add_argument(
+        '--save-only-plot-settings',
+        action='store_true',
+        help='Only save the plot config. (Only available when saving)',
+    )
+
+    plot_settings_group = parser.add_mutually_exclusive_group()
+    plot_settings_group.add_argument(
+        '--save-plot-settings',
+        action='store_true',
+        help='Save the configurable plot settings. (Only available when saving)',
+    )
+    plot_settings_group.add_argument(
+        '--load-plot-settings',
+        type=Path, metavar='PLOT_SETTINGS',
+        help='Load the configurable plot settings.',
+    )
 
 
 def add_global_data_export_arguments(parser: argparse.ArgumentParser) -> argparse._ArgumentGroup:

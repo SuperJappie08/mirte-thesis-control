@@ -13,12 +13,15 @@
 # limitations under the License.
 
 from collections import OrderedDict
+from collections.abc import Iterable
 from pathlib import Path
-from typing import Optional, Self, TYPE_CHECKING
+import pickle
+from typing import Any, Literal, Optional, Self, TYPE_CHECKING
 
 import matplotlib.pyplot as plt
 
 from .export_utils import extract_configuration
+from .utils import get_nested_dict
 
 if TYPE_CHECKING:
     from types import ModuleType
@@ -87,9 +90,79 @@ def mpl_keyboard_close_all(event: 'KeyEvent'):
 class PlotOutputManager:
     """A helper class to generate Plot outputs (display figures or export)."""
 
-    def __init__(self, save_path: Optional[Path] = None, configuration: Optional[str] = None):
+    def __init__(
+        self,
+        save_path: Optional[Path] = None,
+        configuration: Optional[str] = None,
+        config_mode: Literal['capture', 'load'] = 'capture',
+        *,
+        force_display: bool = False,
+        config: Optional[dict[str, Any]] = None,
+        key_stack: Optional[list[str]] = None,
+    ):
         self._save_path = save_path.expanduser().absolute() if save_path is not None else None
         self._configuration = configuration
+
+        self.__force_display = force_display
+
+        assert (config is None) == (key_stack is None)
+        self.__config_mode: Literal['capture', 'load'] = config_mode
+        self.__config = config if config is not None else {}
+        self.__key_stack = key_stack if key_stack is not None else []
+
+    def __get_dict(self) -> dict[str, Any]:
+        return get_nested_dict(self.__config, *self.__key_stack)
+
+    def get(self, key: str | Iterable[str], default: Optional[Any] = None, /) -> Optional[Any]:
+        if isinstance(key, str):
+            return self.__get_dict().get(key, default)
+        else:
+            keys = list(key)
+            return get_nested_dict(self.__get_dict(), *keys[:-1]).get(keys[-1], default)
+
+    def __getitem__(self, key: str | Iterable[str]) -> Any:
+        if isinstance(key, str):
+            return self.__get_dict()[key]
+        else:
+            keys = list(key)
+            return get_nested_dict(self.__get_dict(), *keys[:-1])[keys[-1]]
+
+    def __setitem__(self, key: str | Iterable[str], value: Any):
+        if isinstance(key, str):
+            self.__get_dict()[key] = value
+        else:
+            keys = list(key)
+            get_nested_dict(self.__get_dict(), *keys[:-1])[keys[-1]] = value
+
+    def __delitem__(self, key: str | Iterable[str]):
+        if isinstance(key, str):
+            del self.__get_dict()[key]
+        else:
+            keys = list(key)
+            del get_nested_dict(self.__get_dict(), *keys[:-1])[keys[-1]]
+
+    @property
+    def capturing_config(self) -> bool:
+        return self.__config_mode == 'capture'
+
+    def save_config(self):
+        assert self.save_path is not None, 'Only able to save plot config when saving'
+
+        plot_config_path = self.save_path / 'plot-config.pkl'
+        logger.info("Writing plot config to '%s'", plot_config_path)
+
+        with plot_config_path.open('bw') as f:
+            pickle.dump(self.__config, f)
+
+    def load_config(self, plot_config_path: Path):
+        assert not self.capturing_config, 'Only able to save plot config when saving'
+        assert plot_config_path.exists() and plot_config_path.is_file(), \
+            f"Supplied plot config '{plot_config_path}' is not a file"
+
+        logger.info("Reading plot config from '%s'", plot_config_path)
+
+        with plot_config_path.open('br') as f:
+            self.__config = pickle.load(f)
 
     @property
     def configuration(self) -> Optional[str]:
@@ -121,12 +194,16 @@ class PlotOutputManager:
             return f' - {self.configuration}'
 
     @property
+    def force_display(self) -> bool:
+        return self.__force_display
+
+    @property
     def display_plots(self) -> bool:
-        return self._save_path is None
+        return self._save_path is None or self.force_display
 
     @property
     def save_plots(self) -> bool:
-        return self._save_path is not None
+        return self._save_path is not None and not self.force_display
 
     @property
     def save_path(self) -> Optional[Path]:
@@ -142,7 +219,8 @@ class PlotOutputManager:
             plt.figure(fig)
             logger.info("Displaying Figure '%s'", fname)
             connect_mpl_keyboard_handler(fig)
-            plt.show(block=block)
+            if not self.force_display:
+                plt.show(block=block)
             plt.figure(old_fig)
         else:
             assert self.save_path is not None
@@ -164,15 +242,33 @@ class PlotOutputManager:
 
     def show_all(self, block: Optional[bool] = None) -> None:
         if self.display_plots:
-            plt.show(block=block)
+            if not self.force_display:
+                plt.show(block=block)
+            else:
+                plt.close('all')
 
     def __truediv__(self, subfolder) -> Self:
-        if self.display_plots:
-            return self
-        else:
-            assert self.save_path is not None
-            return self.__class__(self.save_path / subfolder, configuration=self.configuration)
+        temp_dict = self.__get_dict()
+
+        key_stack = self.__key_stack.copy()
+
+        if self.configuration is not None:
+            if self.capturing_config and subfolder in temp_dict:
+                logger.warning("Key '%s' already exists", '.'.join((*key_stack, subfolder)))
+            else:
+                temp_dict[subfolder] = temp_dict.get(subfolder, {})
+            key_stack += [subfolder]
+
+        return self.__class__(
+            save_path=self.save_path / subfolder if self.save_path is not None else self.save_path,
+            configuration=self.configuration,
+            config_mode=self.__config_mode,
+            force_display=self.force_display,
+            config=self.__config,
+            key_stack=key_stack,
+        )
 
     def __repr__(self) -> str:
         return f'{self.__class__.__name__}(save_path={self.save_path!r}, ' \
-                f'configuration={self.configuration!r})'
+                f'configuration={self.configuration!r}, force_display={self.force_display!r}, ' \
+                f'config={self.__config!r}, key_stack={self.__key_stack!r})'

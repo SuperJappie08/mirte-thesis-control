@@ -30,7 +30,6 @@ def create_config(basepath: Path, data_folder: Path, args: 'Namespace'):
 
     config_path: Path = basepath / 'config'
 
-    print(Path().absolute().resolve())
     if config_path.exists():
         if not prompt(f"Export '{basepath}' already exists! Override", default=False):
             exit()

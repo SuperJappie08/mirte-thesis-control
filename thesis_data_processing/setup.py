@@ -23,6 +23,7 @@ setup(
             f'bodeplotter = {package_name}.bodeplot:main',
             f'step_response = {package_name}.step_response:main',
             f'zero_frequency_correction_data = {package_name}.zero_frequency_correction_data:main',
+            f'plot_config_merger = {package_name}.plot_config_merger:main',
         ],
     },
 )

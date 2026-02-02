@@ -408,6 +408,18 @@ def fit_bode_data(
                     plt.legend()
 
                     figure_name = f'{frequency_key}'
+
+                    if local_plt_mgr.capturing_config:
+                        local_plt_mgr[figure_name] = {
+                            'ymin': plt.ylim()[0],
+                            'ymax': plt.ylim()[1],
+                        }
+                    else:
+                        plt.ylim(
+                            bottom=local_plt_mgr.get((figure_name, 'ymin')),
+                            top=local_plt_mgr.get((figure_name, 'ymax')),
+                        )
+
                     local_plt_mgr.output(fig, fname=figure_name, block=False)
 
     return bode_df
@@ -490,7 +502,24 @@ def main(args: Optional[Sequence[str]] = None) -> int:
 
     parsed_args = parser.parse_args(args)
 
-    plt_mgr = PlotOutputManager(parsed_args.save_plots)
+    # Process arguments
+    if parsed_args.save_only_plot_settings:
+        assert parsed_args.save_plots is not None, \
+            '--save-plots must also be provided when using --save-only-plot-settings'
+        assert parsed_args.save_plot_settings, \
+            '--save-plot-settings must also be provided when using --save-only-plot-settings'
+
+    plt_mgr = PlotOutputManager(
+        parsed_args.save_plots,
+        force_display=parsed_args.save_only_plot_settings,
+        config_mode='load' if parsed_args.load_plot_settings is not None else 'capture',
+    )
+
+    if parsed_args.load_plot_settings is not None:
+        plot_settings_path: Path = parsed_args.load_plot_settings
+        assert plot_settings_path.is_file(), \
+            "The specified 'PLOT_SETTINGS' must be a valid plot settings file (pickle)"
+        plt_mgr.load_config(plot_settings_path)
 
     datarange_selector = slice(
         parsed_args.skip_samples,
@@ -507,6 +536,11 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         remaining_plot_frequencies.extend(plot_frequencies.tolist())
     wheels_to_plot = parsed_args.plot_wheel
     debug_frequency_plot = parsed_args.debug_frequency
+
+    if parsed_args.save_plot_settings and not (plot_all_frequencies and (wheels_to_plot == 'all')):
+        logger.warning('Attempting to save plot values, while not all plots are enabled!')
+        if not utils.prompt('Are you sure you want to continue?', default=False):
+            exit()
 
     # Bode Plot Settings
     bodeplot_num_ignored_frequencies: int = parsed_args.drop_frequencies
@@ -653,8 +687,31 @@ def main(args: Optional[Sequence[str]] = None) -> int:
                 raise ValueError('Unknown plot Phase scale')
 
         figure_name = f'bode-{title_wheel_name.replace(" ", "-").lower()}'
+
+        if plt_mgr.capturing_config:
+            plt_mgr[figure_name, 'gain'] = {
+                'ymin': ax_gain.get_ylim()[0],
+                'ymax': ax_gain.get_ylim()[1],
+            }
+            plt_mgr[figure_name, 'phase'] = {
+                'ymin': ax_phase.get_ylim()[0],
+                'ymax': ax_phase.get_ylim()[1],
+            }
+        else:
+            ax_gain.set_ylim(
+                ymin=plt_mgr.get((figure_name, 'gain', 'ymin')),
+                ymax=plt_mgr.get((figure_name, 'gain', 'ymax')),
+            )
+            ax_phase.set_ylim(
+                ymin=plt_mgr.get((figure_name, 'phase', 'ymin')),
+                ymax=plt_mgr.get((figure_name, 'phase', 'ymax')),
+            )
+
         plt_mgr.output(fig, fname=figure_name, block=False)
 
     plt_mgr.show_all()
+
+    if parsed_args.save_plot_settings:
+        plt_mgr.save_config()
 
     return 0
