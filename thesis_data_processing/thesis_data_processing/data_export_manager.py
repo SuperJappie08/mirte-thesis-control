@@ -112,7 +112,7 @@ class DataExportManager:
                 f.write(f'%% DATASET EXPORT: {dataset} - {self.export_prefix} \n\n')
                 dataset_dict = self.get_dataset(dataset)
 
-                for (key, value) in dataset_dict.items():
+                for (key, value) in sorted(dataset_dict.items()):
                     f.write(converter(self.export_prefix, key, value))
                     f.write('\n')
         else:

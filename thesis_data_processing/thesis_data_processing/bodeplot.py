@@ -625,7 +625,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
         assert isinstance(ax_phase, plt.Axes)
 
         fig.suptitle(f'Bode Plot - {title_wheel_name}{plt_mgr.configuration_title}')
-        # TODO(SuperJappie08): Add subplot titles
+        # NOTE(SuperJappie08): Did not add subplot titles, since it's uncommon
 
         freq_selector = slice(None, -bodeplot_num_ignored_frequencies)
         frequency_axis = bode_df.index.to_numpy(dtype=np.float64)[freq_selector]
