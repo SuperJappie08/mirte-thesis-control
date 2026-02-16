@@ -8,6 +8,7 @@ This `thesis` folder should have the following file structure:
 ```
 thesis/
 ├── ths_ws/ (ROS workspace can have anyname)
+├── correction-data/... (Folder containing the frequency offset correction data)
 ├── measurements/ (Location of the data can be different)
 │   ├── data-folder-A-1/...
 │   ├── data-folder-A-2/...
@@ -37,8 +38,44 @@ thesis/
     └── ...
 ```
 
-## Figures
-**TODO: Finish instructions**
-
 ## Plot-configs
-**TODO: Finish instructions**
+**1a.** To generate plot configs for frequency response setups run (from `thesis/` folder):
+```bash
+ros2 run thesis_data_processing bodeplotter $PWD/measurements/<DATA_FOLDER_FOR_CONFIGURATION> --phase-method continuous -w all -F --save-plots $PWD/plot-configs/<SETUP>/ --save-plot-settings --save-only-plot-settings <OPTIONAL-ARGS>
+```
+
+**1b.** To generate plot configs for step response setups run (from `thesis/` folder ):
+```bash
+ros2 run thesis_data_processing step_response $PWD/measurements/<DATA_FOLDER_FOR_CONFIGURATION> -U --save-plots $PWD/plot-configs/<SETUP>/ --save-plot-settings --save-only-plot-settings <OPTIONAL-ARGS>
+```
+
+**2.** After which, the configs can be combined by running (from the `thesis/` folder):
+```bash
+ros2 run thesis_data_processing plot_config_merger --input ./plot-configs/<SETUP>/*/plot-config.pkl --output ./plot-configs/<SETUP>/merged-plot-config.pkl
+```
+
+## Figures
+> Before generating figures it is recommended to first generate the appropriate plot-configs.
+
+**1a.** To generate frequency response figures run the following command (from the `thesis/` folder):
+
+> [!note]
+> Correction data is **only recommend** for the **offset frequency trials**.
+> This data is used to adjust for the gain at a frequency of 0 Hz.
+> It can be generated from a *step response measurement* generated with `wheel_response_recorder/launch/step_zero_frequency_correction.launch.xml`.
+>
+> To generate the correction data run the following command:
+> ```bash
+> ros2 run thesis_data_processing $PWD/measurements/<CORRECTION_DATA_FOR_CONFIGURATION> --save-output $PWD/correction-data/
+> # The correction file will match the source data foldername.
+> ```
+
+```bash
+ros2 run thesis_data_processing bodeplotter $PWD/measurements/<DATA_FOLDER_FOR_CONFIGURATION> --phase-method continuous -w all -F --save-plots $PWD/figures/<SETUP>/ -ocm data -cdf $PWD/correction-data/<MATCHING-CORRECTIONDATA> --load-plot-settings $PWD/plot-configs/<CONFIG>/merged-plot-config.pkl <OPTIONAL-ARGS>
+```
+
+
+**1b.** To generate step response figures run the following command (from the `thesis/` folder):
+```bash
+ros2 run thesis_data_processing step_response $PWD/measurements/experimental/<DATA_FOLDER_FOR_CONFIGURATION> -U --save-plots $PWD/figures/<SETUP>/ --load-plot-settings $PWD/plot-configs/<SETUP>/merged-plot-config.pkl <OPTIONAL-ARGS>
+```
