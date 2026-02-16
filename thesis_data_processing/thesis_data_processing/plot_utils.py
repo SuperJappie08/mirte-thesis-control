@@ -97,6 +97,7 @@ class PlotOutputManager:
         config_mode: Literal['capture', 'load'] = 'capture',
         *,
         force_display: bool = False,
+        default_format: Optional[str] = 'pgf',
         config: Optional[dict[str, Any]] = None,
         key_stack: Optional[list[str]] = None,
     ):
@@ -104,6 +105,12 @@ class PlotOutputManager:
         self._configuration = configuration
 
         self.__force_display = force_display
+
+        if default_format is None:
+            self.__default_format = 'pgf' if mpl2tkz is None else 'tikz'
+        else:
+            self.__default_format = default_format
+        logger.debug("Using default format '%s'", self.default_format)
 
         assert (config is None) == (key_stack is None)
         self.__config_mode: Literal['capture', 'load'] = config_mode
@@ -209,10 +216,14 @@ class PlotOutputManager:
     def save_path(self) -> Optional[Path]:
         return self._save_path
 
+    @property
+    def default_format(self) -> str:
+        return self.__default_format
+
     def output(
         self, fig: 'Figure', /,
         fname: str, block: Optional[bool] = None, *,
-        file_format: Optional[str] = 'pgf',
+        file_format: Optional[str] = None,
     ) -> None:
         if self.display_plots:
             old_fig = plt.gcf()
@@ -227,7 +238,7 @@ class PlotOutputManager:
             self.save_path.mkdir(parents=True, exist_ok=True)
             assert self.save_path.is_dir(), 'Plot save path must be a directory'
             if file_format is None:
-                file_format = 'pgf' if mpl2tkz is None else 'tikz'
+                file_format = self.default_format
 
             filename = f'{fname}.{file_format}'
             logger.info("Saving Figure to '%s'", self.save_path / filename)
@@ -264,6 +275,7 @@ class PlotOutputManager:
             configuration=self.configuration,
             config_mode=self.__config_mode,
             force_display=self.force_display,
+            default_format=self.default_format,
             config=self.__config,
             key_stack=key_stack,
         )
@@ -271,4 +283,5 @@ class PlotOutputManager:
     def __repr__(self) -> str:
         return f'{self.__class__.__name__}(save_path={self.save_path!r}, ' \
                 f'configuration={self.configuration!r}, force_display={self.force_display!r}, ' \
-                f'config={self.__config!r}, key_stack={self.__key_stack!r})'
+                f'default_format={self.default_format!r}, config={self.__config!r}, '\
+                f'key_stack={self.__key_stack!r})'

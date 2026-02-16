@@ -31,6 +31,13 @@ def add_global_plotting_arguments(parser: argparse.ArgumentParser):
         help='Path to save plots to. (Only saving when supplied)',
     )
     parser.add_argument(
+        '--save-plot-format',
+        action='store', required=False,
+        type=str, metavar='PLOT_FORMAT',
+        default='pgf',
+        help='Image format as to which to save the plots.',
+    )
+    parser.add_argument(
         '--save-only-plot-settings',
         action='store_true',
         help='Only save the plot config. (Only available when saving)',

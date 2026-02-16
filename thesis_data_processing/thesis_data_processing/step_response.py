@@ -463,6 +463,7 @@ def main(args: Optional[Sequence[str]] = None) -> int:
     plt_mgr = PlotOutputManager(
         parsed_args.save_plots,
         force_display=parsed_args.save_only_plot_settings,
+        default_format=parsed_args.save_plot_format,
         config_mode='load' if parsed_args.load_plot_settings is not None else 'capture',
     )
 
